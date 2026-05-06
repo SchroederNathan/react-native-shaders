@@ -13,7 +13,8 @@ import {
   type CanvasRef,
   type RNCanvasContext,
 } from 'react-native-wgpu';
-import * as d from 'typegpu/data';
+import type * as d from 'typegpu/data';
+import { vec2f } from 'typegpu/data';
 
 import { buildPipeline, type BuiltPipeline } from './pipeline';
 import type { ShaderModule, ShaderViewProps, UniformValues } from './types';
@@ -23,8 +24,8 @@ export type ShaderMountProps<U extends d.WgslStruct> = ShaderViewProps & {
   shader: ShaderModule<U>;
   uniforms: UniformValues<U>;
   /**
-   * Source texture sampled by the fragment shader at `@group(0) @binding(1)`.
-   * `null` while the source is loading; the canvas stays blank in that case.
+   * Source texture bound to the shader's `sourceTex` entry. `null` while
+   * the source is loading; the canvas stays blank in that case.
    */
   sourceTexture: GPUTexture | null;
 };
@@ -55,7 +56,6 @@ function ShaderMountInner<U extends d.WgslStruct>(
 
   const rootState = useTypeGPURoot();
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
-  const [canvasReady, setCanvasReady] = useState(false);
 
   // react-native-wgpu configures the swapchain at the View's CSS-pixel size,
   // so `fragCoord` in WGSL is in CSS pixels. The `resolution` uniform we
@@ -87,16 +87,7 @@ function ShaderMountInner<U extends d.WgslStruct>(
   const samplerRef = useRef<GPUSampler | null>(null);
 
   useEffect(() => {
-    setCanvasReady(false);
-    if (!size) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.whenReady(() => setCanvasReady(true));
-  }, [size]);
-
-  useEffect(() => {
     if (rootState.status !== 'ready' || !canvasRef.current) return;
-    if (!canvasReady) return;
     if (pxW === 0 || pxH === 0) return;
     if (!sourceTexture) return;
 
@@ -151,7 +142,7 @@ function ShaderMountInner<U extends d.WgslStruct>(
       pipelineRef.current = null;
       ctxRef.current = null;
     };
-  }, [rootState, shader, pxW, pxH, canvasReady, sourceTexture]);
+  }, [rootState, shader, pxW, pxH, sourceTexture]);
 
   const uniformsRef = useRef(uniforms);
   uniformsRef.current = uniforms;
@@ -166,37 +157,32 @@ function ShaderMountInner<U extends d.WgslStruct>(
     if (!built || !ctx) return;
 
     try {
-      const data = {
-        ...(uniformsRef.current as Record<string, unknown>),
-        resolution: d.vec2f(pxW, pxH),
-      };
-      built.uniformBuffer.write(data as never);
+      // TypeScript can't prove that re-adding `resolution` to
+      // `Omit<InferInput<U>, 'resolution'>` reproduces `InferInput<U>` for
+      // a generic `U` — the cast is a single, explicit boundary instead of
+      // sprinkling `as never` through the call. The shape is enforced by
+      // `UniformValues<U>` everywhere else.
+      built.uniformBuffer.write({
+        ...uniformsRef.current,
+        resolution: vec2f(pxW, pxH),
+      } as d.InferInput<U>);
 
-      const view = ctx.getCurrentTexture().createView();
-      const encoder = rootState.device.createCommandEncoder();
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view,
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            loadOp: 'clear',
-            storeOp: 'store',
-          },
-        ],
-      });
-      pass.setPipeline(built.pipeline);
-      pass.setBindGroup(0, built.bindGroup);
-      pass.draw(3);
-      pass.end();
-
-      rootState.device.queue.submit([encoder.finish()]);
+      built.pipeline
+        .with(built.bindGroup)
+        .withColorAttachment({
+          view: ctx,
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        })
+        .draw(3);
       ctx.present();
     } catch (err) {
       if (__DEV__) {
         console.error('[react-native-shaders] render failed', err);
       }
     }
-  }, [rootState, uniforms, pxW, pxH, sourceTexture, canvasReady]);
+  }, [rootState, uniforms, pxW, pxH, sourceTexture]);
 
   const error =
     rootState.status === 'error' ? rootState.error.message : null;

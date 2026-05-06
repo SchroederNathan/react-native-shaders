@@ -76,38 +76,57 @@ static threshold field — the classic retro-CRT look.
 ## Building your own shader
 
 Shaders in this package are image-shaders: they sample a source `GPUTexture`
-at `@group(0) @binding(1)` and write a colour. The shared `<ShaderMount/>`
-owns the `<Canvas/>`, the TypeGPU root, the render pipeline, the uniform
-buffer, and the (lazy, on-input) render loop — your shader file only
-describes the GPU work.
+and write a colour. The shared `<ShaderMount/>` owns the `<Canvas/>`, the
+TypeGPU root, the render pipeline, the uniform buffer, and the (lazy,
+on-input) render loop — your shader file only describes the GPU work.
+
+Shaders are authored as TypeGPU functions (no WGSL strings). The build
+plugin `unplugin-typegpu/babel` transpiles `'use gpu'`-marked TypeScript
+into WGSL at compile time. Add it to your `babel.config.js`:
+
+```js
+module.exports = (api) => {
+  api.cache(true);
+  return {
+    presets: ['babel-preset-expo'],
+    plugins: [
+      'unplugin-typegpu/babel',
+      'react-native-worklets/plugin', // must be last if you also use Reanimated
+    ],
+  };
+};
+```
+
+Then write the shader as TypeScript:
 
 ```ts
 // my-shaders/posterize.ts
+import tgpu, { std } from 'typegpu';
 import * as d from 'typegpu/data';
-import { wgsl, type ShaderModule } from 'react-native-shaders';
+import type { ShaderModule } from 'react-native-shaders';
 
 export const PosterizeUniforms = d.struct({
-  resolution: d.vec2f,   // written by <ShaderMount/> every frame
-  levels:     d.f32,
+  resolution: d.vec2f, // written by <ShaderMount/> every frame
+  levels: d.f32,
 });
 
 export const posterizeShader: ShaderModule<typeof PosterizeUniforms> = {
   uniforms: PosterizeUniforms,
-  code: `
-    ${wgsl.FULLSCREEN_TRIANGLE_VS}
-
-    struct Uniforms { resolution: vec2f, levels: f32, };
-    @group(0) @binding(0) var<uniform> u: Uniforms;
-    @group(0) @binding(1) var srcTexture: texture_2d<f32>;
-    @group(0) @binding(2) var srcSampler: sampler;
-
-    @fragment
-    fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-      let src = textureSample(srcTexture, srcSampler, uv);
-      let stepped = floor(src.rgb * u.levels) / u.levels;
-      return vec4f(stepped, 1.0);
-    }
-  `,
+  fragment: (layout) =>
+    tgpu.fragmentFn({
+      in: { uv: d.vec2f },
+      out: d.vec4f,
+    })((input) => {
+      'use gpu';
+      const u = layout.$.uniforms;
+      const src = std.textureSample(
+        layout.$.sourceTex,
+        layout.$.sourceSampler,
+        input.uv,
+      );
+      const stepped = std.floor(src.rgb.mul(u.levels)).div(u.levels);
+      return d.vec4f(stepped, d.f32(1));
+    }),
 };
 ```
 
@@ -144,14 +163,20 @@ A few rules to know:
 
 - The `resolution` field on your uniform struct is **always** auto-written
   by `<ShaderMount/>` — declare it, don't set it. Every other field comes
-  from the `uniforms` prop, type-checked against your struct via
-  `UniformValues<U>`.
+  from the `uniforms` prop, statically inferred from your `d.struct` via
+  `UniformValues<U>` — renaming a field is a single TypeScript rename, not
+  a silent runtime mismatch.
+- The fragment function receives the bind group layout: read uniforms via
+  `layout.$.uniforms.<field>`, sample the source via
+  `std.textureSample(layout.$.sourceTex, layout.$.sourceSampler, uv)`. No
+  `@group/@binding` strings to keep in sync.
+- The vertex stage is fixed (`common.fullScreenTriangle`). Your fragment's
+  `in:` should include `uv: d.vec2f`. You can also opt into builtins like
+  `fragCoord: d.builtin.position`.
 - `<ShaderMount/>` re-renders on input change, not on a clock. There is no
   built-in `time` uniform — if you need animation, drive a uniform from
   `requestAnimationFrame` in your component.
 - `sourceTexture` is required. While it's `null`, the canvas stays blank.
-- The bind group layout is fixed: `@binding(0)` uniforms, `@binding(1)`
-  texture, `@binding(2)` sampler.
 
 ## What's exported
 
@@ -167,15 +192,13 @@ import {
   ShaderMount,
   type ShaderMountProps,
   type ShaderModule,
+  type ImageShaderLayout,
   type ShaderViewProps,
   type UniformValues,
 
   // The built-in dither module (for composing into your own components)
   ditherShader,
   DitherUniforms,
-
-  // Reusable WGSL snippets (currently: fullscreen triangle vertex shader)
-  wgsl,
 } from 'react-native-shaders';
 ```
 

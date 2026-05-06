@@ -4,15 +4,20 @@
   "description": "Animated, type-safe GPU shader components for React Native, powered by TypeGPU and react-native-wgpu.",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
-  "types": "lib/typescript/src/index.d.ts",
+  "types": "lib/typescript/commonjs/src/index.d.ts",
   "react-native": "src/index.ts",
   "source": "src/index.ts",
   "exports": {
     ".": {
-      "types": "./lib/typescript/src/index.d.ts",
       "react-native": "./src/index.ts",
-      "import": "./lib/module/index.js",
-      "require": "./lib/commonjs/index.js"
+      "import": {
+        "types": "./lib/typescript/module/src/index.d.ts",
+        "default": "./lib/module/index.js"
+      },
+      "require": {
+        "types": "./lib/typescript/commonjs/src/index.d.ts",
+        "default": "./lib/commonjs/index.js"
+      }
     },
     "./app.plugin.js": "./app.plugin.js"
   },
@@ -56,18 +61,23 @@
   "peerDependencies": {
     "react": "*",
     "react-native": ">=0.81.0",
-    "react-native-wgpu": ">=0.2.0",
-    "typegpu": ">=0.5.0"
+    "react-native-reanimated": ">=4.2.1",
+    "react-native-wgpu": ">=0.5.0",
+    "react-native-worklets": ">=0.7.2",
+    "typegpu": ">=0.11.0"
   },
   "devDependencies": {
+    "@expo/config-plugins": "^55.0.8",
     "@types/react": "~19.1.0",
+    "@webgpu/types": "^0.1.69",
     "del-cli": "^6.0.0",
     "react": "19.1.0",
     "react-native": "0.81.4",
     "react-native-builder-bob": "^0.40.0",
-    "react-native-wgpu": "^0.2.0",
-    "typegpu": "^0.5.0",
-    "typescript": "^5.6.0"
+    "react-native-wgpu": "^0.5.11",
+    "typegpu": "^0.11.3",
+    "typescript": "^5.6.0",
+    "unplugin-typegpu": "^0.11.3"
   },
   "expo": {
     "plugins": [
@@ -93,8 +103,7 @@
       [
         "typescript",
         {
-          "project": "tsconfig.build.json",
-          "esm": true
+          "project": "tsconfig.build.json"
         }
       ]
     ]

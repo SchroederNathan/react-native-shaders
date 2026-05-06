@@ -1,27 +1,42 @@
 import type { ViewProps } from 'react-native';
+import type { TgpuBindGroupLayout, TgpuFragmentFn } from 'typegpu';
 import type * as d from 'typegpu/data';
 
 /**
- * A shader is a fully-resolved WGSL module plus a TypeGPU uniform schema.
- *
- * Authors write the shader in WGSL (or TGSL via `tgpu.resolve(...)`), declare
- * the uniform layout once with `d.struct({...})`, and let the props -> uniforms
- * mapping in their component stay type-safe end to end.
- *
- * `<ShaderMount/>` builds the GPU pipeline once per `ShaderModule` reference.
+ * Bind group layout shared by every image shader: a uniform buffer at
+ * `uniforms`, a 2D float texture at `sourceTex`, and a filtering sampler
+ * at `sourceSampler`. Authors reference these inside their fragment
+ * function via `layout.$.uniforms`, `layout.$.sourceTex`, and
+ * `layout.$.sourceSampler` — no `@group(N) @binding(M)` strings.
  */
-export type ShaderModule<U extends d.WgslStruct = d.WgslStruct> = {
-  /** TypeGPU struct describing the uniform buffer layout. */
+export type ImageShaderLayout<U extends d.WgslStruct> = TgpuBindGroupLayout<{
+  uniforms: { uniform: U };
+  sourceTex: { texture: d.WgslTexture2d<d.F32> };
+  sourceSampler: { sampler: 'filtering' };
+}>;
+
+/**
+ * A shader is a TypeGPU uniform schema plus a fragment-function factory.
+ *
+ * The factory is called once at pipeline build time with the bind group
+ * layout, returning a typed `TgpuFragmentFn`. This keeps the uniform
+ * struct, the bind group layout, and the shader implementation linked by
+ * type — renaming a uniform field is a single TypeScript rename, not a
+ * silent runtime mismatch between WGSL and JS.
+ *
+ * The fragment factory's return type is intentionally permissive
+ * (`TgpuFragmentFn<any, any>`); the actual IO contract is enforced
+ * structurally by the `tgpu.fragmentFn({...})` shell the author writes
+ * inside the factory. The `in` it accepts must be a subset of
+ * `common.fullScreenTriangle`'s output (`{ uv: d.Vec2f }`) plus any
+ * fragment builtins (e.g. `d.builtin.position`); the `out` must be
+ * `d.vec4f`.
+ */
+export type ShaderModule<U extends d.WgslStruct> = {
   uniforms: U;
-  /** Full WGSL source containing both vertex and fragment entry points. */
-  code: string;
-  /** Vertex entry point name. Defaults to `vs_main`. */
-  vertexEntry?: string;
-  /** Fragment entry point name. Defaults to `fs_main`. */
-  fragmentEntry?: string;
-  /** Defaults to `triangle-list`. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fragment: (layout: ImageShaderLayout<U>) => TgpuFragmentFn<any, any>;
   topology?: GPUPrimitiveTopology;
-  /** Optional blend state. Default is no blend (opaque output). */
   blend?: GPUBlendState;
 };
 
@@ -29,21 +44,10 @@ export type ShaderModule<U extends d.WgslStruct = d.WgslStruct> = {
  * Uniform values inferred from a `ShaderModule`'s struct schema, minus the
  * built-in `resolution` field that `<ShaderMount/>` writes itself.
  */
-export type UniformValues<U extends d.WgslStruct> =
-  U extends d.WgslStruct<infer P>
-    ? {
-        [K in keyof P as K extends 'resolution' ? never : K]: WgslDataToHost<
-          P[K]
-        >;
-      }
-    : never;
-
-type WgslDataToHost<T> =
-  T extends d.F32 | d.I32 | d.U32 ? number
-  : T extends d.Vec2f | d.Vec2i | d.Vec2u ? d.v2f | d.v2i | d.v2u
-  : T extends d.Vec3f | d.Vec3i | d.Vec3u ? d.v3f | d.v3i | d.v3u
-  : T extends d.Vec4f | d.Vec4i | d.Vec4u ? d.v4f | d.v4i | d.v4u
-  : unknown;
+export type UniformValues<U extends d.WgslStruct> = Omit<
+  d.InferInput<U>,
+  'resolution'
+>;
 
 /** Props every shader component (and `<ShaderMount/>`) accepts. */
 export type ShaderViewProps = ViewProps & {

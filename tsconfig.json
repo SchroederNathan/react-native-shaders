@@ -23,6 +23,7 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "ESNext",
+    "types": ["@webgpu/types"],
     "verbatimModuleSyntax": true
   },
   "include": ["src", "plugin/src"],

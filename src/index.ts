@@ -10,12 +10,12 @@ export type {
 export { ShaderMount } from './core/ShaderMount';
 export type { ShaderMountProps } from './core/ShaderMount';
 export type {
+  ImageShaderLayout,
   ShaderModule,
   ShaderViewProps,
   UniformValues,
 } from './core/types';
 
 // Re-export the built-in shader modules for users composing them with their
-// own components, and the WGSL snippet helpers for new shader authors.
+// own components.
 export { ditherShader, DitherUniforms } from './shaders/dither';
-export * as wgsl from './core/wgsl-snippets';

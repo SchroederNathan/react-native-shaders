@@ -1,6 +1,6 @@
+import tgpu, { std } from 'typegpu';
 import * as d from 'typegpu/data';
 
-import { FULLSCREEN_TRIANGLE_VS } from '../core/wgsl-snippets';
 import type { ShaderModule } from '../core/types';
 
 export const DITHER_TYPE_RANDOM = 1;
@@ -24,132 +24,125 @@ export const DitherUniforms = d.struct({
   colorFront: d.vec4f,
 });
 
-const DITHER_FS = /* wgsl */ `
-struct Uniforms {
-  resolution: vec2f,
-  imageSize:  vec2f,
-  pxSize:     f32,
-  ditherType: u32,
-  colorBack:  vec4f,
-  colorFront: vec4f,
-};
-
-@group(0) @binding(0) var<uniform> u: Uniforms;
-@group(0) @binding(1) var srcTexture: texture_2d<f32>;
-@group(0) @binding(2) var srcSampler: sampler;
-
 // Bayer threshold matrices, scaled to 0..1. Layout matches paper-design's
 // reference (https://github.com/paper-design/shaders) so the visual output
 // is identical when the same pxSize and dither type are picked.
-//
-// Arrays live inside the lookup functions so we don't depend on
-// module-scope const-array support, which some older Dawn builds reject.
-fn bayer2(p: vec2u) -> f32 {
-  let m = array<u32, 4>(
-    0u, 2u,
-    3u, 1u,
-  );
-  return f32(m[(p.y & 1u) * 2u + (p.x & 1u)]) / 4.0;
-}
-fn bayer4(p: vec2u) -> f32 {
-  let m = array<u32, 16>(
-    0u,  8u,  2u, 10u,
-    12u, 4u, 14u,  6u,
-    3u, 11u,  1u,  9u,
-    15u, 7u, 13u,  5u,
-  );
-  return f32(m[(p.y & 3u) * 4u + (p.x & 3u)]) / 16.0;
-}
-fn bayer8(p: vec2u) -> f32 {
-  let m = array<u32, 64>(
-    0u, 32u,  8u, 40u,  2u, 34u, 10u, 42u,
-    48u, 16u, 56u, 24u, 50u, 18u, 58u, 26u,
-    12u, 44u,  4u, 36u, 14u, 46u,  6u, 38u,
-    60u, 28u, 52u, 20u, 62u, 30u, 54u, 22u,
-    3u, 35u, 11u, 43u,  1u, 33u,  9u, 41u,
-    51u, 19u, 59u, 27u, 49u, 17u, 57u, 25u,
-    15u, 47u,  7u, 39u, 13u, 45u,  5u, 37u,
-    63u, 31u, 55u, 23u, 61u, 29u, 53u, 21u,
-  );
-  return f32(m[(p.y & 7u) * 8u + (p.x & 7u)]) / 64.0;
-}
+const bayer2 = tgpu.fn([d.vec2u], d.f32)((p) => {
+  'use gpu';
+  const m = d.arrayOf(d.u32, 4)([0, 2, 3, 1]);
+  return d.f32(m[(p.y & 1) * 2 + (p.x & 1)]) / d.f32(4);
+});
+
+const bayer4 = tgpu.fn([d.vec2u], d.f32)((p) => {
+  'use gpu';
+  const m = d.arrayOf(d.u32, 16)([
+    0, 8, 2, 10,
+    12, 4, 14, 6,
+    3, 11, 1, 9,
+    15, 7, 13, 5,
+  ]);
+  return d.f32(m[(p.y & 3) * 4 + (p.x & 3)]) / d.f32(16);
+});
+
+const bayer8 = tgpu.fn([d.vec2u], d.f32)((p) => {
+  'use gpu';
+  const m = d.arrayOf(d.u32, 64)([
+    0, 32, 8, 40, 2, 34, 10, 42,
+    48, 16, 56, 24, 50, 18, 58, 26,
+    12, 44, 4, 36, 14, 46, 6, 38,
+    60, 28, 52, 20, 62, 30, 54, 22,
+    3, 35, 11, 43, 1, 33, 9, 41,
+    51, 19, 59, 27, 49, 17, 57, 25,
+    15, 47, 7, 39, 13, 45, 5, 37,
+    63, 31, 55, 23, 61, 29, 53, 21,
+  ]);
+  return d.f32(m[(p.y & 7) * 8 + (p.x & 7)]) / d.f32(64);
+});
 
 // hash21 from paper-design — cheap procedural random for "random" dither.
-fn hash21(p: vec2f) -> f32 {
-  var q = fract(p * vec2f(0.3183099, 0.3678794)) + vec2f(0.1);
-  q = q + vec2f(dot(q, q + vec2f(19.19)));
-  return fract(q.x * q.y);
-}
+const hash21 = tgpu.fn([d.vec2f], d.f32)((p) => {
+  'use gpu';
+  let q = std.fract(p.mul(d.vec2f(0.3183099, 0.3678794))).add(d.vec2f(0.1));
+  q = q.add(d.vec2f(std.dot(q, q.add(d.vec2f(19.19)))));
+  return std.fract(q.x * q.y);
+});
 
 // "Cover" UV mapping — image fills the canvas, cropping the longer axis.
-fn coverUv(uv: vec2f) -> vec2f {
-  let canvasAspect = u.resolution.x / u.resolution.y;
-  let imageAspect = u.imageSize.x / u.imageSize.y;
-  var uvScale = vec2f(1.0);
+const coverUv = tgpu.fn(
+  [d.vec2f, d.vec2f, d.vec2f],
+  d.vec2f,
+)((uv, resolution, imageSize) => {
+  'use gpu';
+  const canvasAspect = resolution.x / resolution.y;
+  const imageAspect = imageSize.x / imageSize.y;
+  let uvScale = d.vec2f(1, 1);
   if (canvasAspect > imageAspect) {
-    uvScale.y = imageAspect / canvasAspect;
+    uvScale = d.vec2f(1, imageAspect / canvasAspect);
   } else {
-    uvScale.x = canvasAspect / imageAspect;
+    uvScale = d.vec2f(canvasAspect / imageAspect, 1);
   }
-  return (uv - vec2f(0.5)) * uvScale + vec2f(0.5);
-}
-
-@fragment
-fn fs_main(
-  @location(0) uv: vec2f,
-  @builtin(position) fragCoord: vec4f,
-) -> @location(0) vec4f {
-  // Pixelize: each pxSize × pxSize block of canvas pixels samples the
-  // source ONCE and is shaded as a single dither cell. This is what gives
-  // the chunky retro look — no intensity ramp, just block-level sampling.
-  let pxSize = max(u.pxSize, 1.0);
-  let blockCoord = floor(fragCoord.xy / pxSize);
-  let blockCenter = (blockCoord + vec2f(0.5)) * pxSize;
-  let normalizedUv = blockCenter / u.resolution;
-
-  let src = textureSample(srcTexture, srcSampler, coverUv(normalizedUv));
-
-  // Perceptual luminance (Rec. 601). Drives the dither: brighter pixels are
-  // more likely to land above threshold and pick up the front colour.
-  let lum = dot(src.rgb, vec3f(0.299, 0.587, 0.114));
-
-  // Look up the threshold for this block.
-  let blockUi = vec2u(u32(blockCoord.x), u32(blockCoord.y));
-  var dithering = 0.0;
-  if (u.ditherType == 1u) {
-    dithering = hash21(blockCenter);
-  } else if (u.ditherType == 2u) {
-    dithering = bayer2(blockUi);
-  } else if (u.ditherType == 3u) {
-    dithering = bayer4(blockUi);
-  } else {
-    dithering = bayer8(blockUi);
-  }
-
-  // Shift the threshold so 0.5 is the neutral midpoint, then binary step.
-  // The result is exactly 0 or 1 — there is no intensity blending; the
-  // local density of "front" pixels is what encodes the original image
-  // brightness.
-  let res = step(0.5, lum + dithering - 0.5);
-
-  // Front-over-back compositing with premultiplied alphas, matching the
-  // paper-design reference. With an opaque canvas the alpha collapses
-  // out, but this keeps the output well-defined for translucent colours.
-  let fg = u.colorFront.rgb * u.colorFront.a;
-  let bg = u.colorBack.rgb * u.colorBack.a;
-  var color = fg * res;
-  var opacity = u.colorFront.a * res;
-  color = color + bg * (1.0 - opacity);
-  opacity = opacity + u.colorBack.a * (1.0 - opacity);
-
-  return vec4f(color, opacity);
-}
-`;
-
-const DITHER_WGSL = `${FULLSCREEN_TRIANGLE_VS}
-${DITHER_FS}`;
+  return uv.sub(d.vec2f(0.5)).mul(uvScale).add(d.vec2f(0.5));
+});
 
 export const ditherShader: ShaderModule<typeof DitherUniforms> = {
   uniforms: DitherUniforms,
-  code: DITHER_WGSL,
+  fragment: (layout) =>
+    tgpu.fragmentFn({
+      in: { uv: d.vec2f, fragCoord: d.builtin.position },
+      out: d.vec4f,
+    })((input) => {
+      'use gpu';
+      const u = layout.$.uniforms;
+
+      // Pixelize: each pxSize × pxSize block of canvas pixels samples the
+      // source ONCE and is shaded as a single dither cell. This is what
+      // gives the chunky retro look — no intensity ramp, just block-level
+      // sampling.
+      const pxSize = std.max(u.pxSize, d.f32(1));
+      const blockCoord = std.floor(input.fragCoord.xy.div(pxSize));
+      const blockCenter = blockCoord.add(d.vec2f(0.5)).mul(pxSize);
+      const normalizedUv = blockCenter.div(u.resolution);
+
+      const src = std.textureSample(
+        layout.$.sourceTex,
+        layout.$.sourceSampler,
+        coverUv(normalizedUv, u.resolution, u.imageSize),
+      );
+
+      // Perceptual luminance (Rec. 601). Drives the dither: brighter pixels
+      // are more likely to land above threshold and pick up the front
+      // colour.
+      const lum = std.dot(src.rgb, d.vec3f(0.299, 0.587, 0.114));
+
+      const blockUi = d.vec2u(d.u32(blockCoord.x), d.u32(blockCoord.y));
+      let dithering = d.f32(0);
+      if (u.ditherType === DITHER_TYPE_RANDOM) {
+        dithering = hash21(blockCenter);
+      } else if (u.ditherType === DITHER_TYPE_2X2) {
+        dithering = bayer2(blockUi);
+      } else if (u.ditherType === DITHER_TYPE_4X4) {
+        dithering = bayer4(blockUi);
+      } else {
+        dithering = bayer8(blockUi);
+      }
+
+      // Shift the threshold so 0.5 is the neutral midpoint, then binary
+      // step. The result is exactly 0 or 1 — there is no intensity
+      // blending; the local density of "front" pixels is what encodes the
+      // original image brightness.
+      const res = std.step(d.f32(0.5), lum + dithering - d.f32(0.5));
+
+      // Front-over-back compositing with premultiplied alphas, matching
+      // the paper-design reference. With an opaque canvas the alpha
+      // collapses out, but this keeps the output well-defined for
+      // translucent colours.
+      const fg = u.colorFront.rgb.mul(u.colorFront.a);
+      const bg = u.colorBack.rgb.mul(u.colorBack.a);
+      let color = fg.mul(res);
+      let opacity = u.colorFront.a * res;
+      color = color.add(bg.mul(d.f32(1) - opacity));
+      opacity = opacity + u.colorBack.a * (d.f32(1) - opacity);
+
+      return d.vec4f(color, opacity);
+    }),
 };
