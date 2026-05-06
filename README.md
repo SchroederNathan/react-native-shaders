@@ -1,25 +1,24 @@
 # react-native-shaders
 
-Animated, type-safe GPU shader components for React Native — built on
+Type-safe GPU shader components for React Native — built on
 [TypeGPU](https://typegpu.com) and
 [react-native-wgpu](https://github.com/wcandillon/react-native-webgpu).
 
 ```tsx
-import { Image } from 'expo-image';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { DitherShader } from 'react-native-shaders';
 
-<View style={{ width: 300, height: 300 }}>
-  <Image source={require('./photo.jpg')} style={StyleSheet.absoluteFill} />
-  <DitherShader style={StyleSheet.absoluteFill} />
-</View>
+<DitherShader
+  source={require('./photo.jpg')}
+  style={{ width: 320, height: 320 }}
+/>
 ```
 
-The shader renders into a transparent WebGPU canvas; the OS compositor blends
-it over whatever is beneath. The same `<DitherShader/>` works over an
-`<Image/>`, an `<expo-video>` `<VideoView/>`, or a
-`<react-native-vision-camera>` `<Camera/>` — no source prop, no
-post-processing, no view capture.
+`<DitherShader/>` loads the image into a `GPUTexture` and runs a fragment
+shader that quantises it to two colours through a Bayer (or random)
+threshold matrix — a port of [paper-design/shaders](https://github.com/paper-design/shaders)'
+dithering algorithm. The output is opaque; the component renders the
+dithered image directly into its own WebGPU canvas.
 
 ## Install
 
@@ -47,79 +46,112 @@ that supports WebGPU on web).
 
 ### `<DitherShader/>`
 
-Animated dither overlay.
+Renders an image dithered to two colours.
 
 ```tsx
 <DitherShader
-  style={StyleSheet.absoluteFill}
-  scale={4}        // dither cell size in CSS pixels
-  intensity={0.5}  // 0 = invisible, 1 = hard binary dots
-  speed={1}        // animation speed multiplier; 0 freezes the pattern
-  color="#000"     // dot color (any CSS color string)
+  source={require('./photo.jpg')}     // require(...), URL string, or { uri }
+  style={{ width: 320, height: 320 }}
+  size={2}                            // dither cell size in CSS pixels
+  type="8x8"                          // 'random' | '2x2' | '4x4' | '8x8'
+  colorBack="#000"                    // colour for "0" cells
+  colorFront="#fff"                   // colour for "1" / ink cells
 />
 ```
 
+The image is rendered with a `cover` fit — it fills the canvas, cropping
+the longer axis. The dither field is anchored to the canvas pixel grid, not
+the source, so for animated sources the underlying pixels travel through a
+static threshold field — the classic retro-CRT look.
+
+| Prop          | Type                                  | Default   | Notes |
+| ------------- | ------------------------------------- | --------- | ----- |
+| `source`      | `string \| { uri } \| require(...)`   | —         | Same semantics as `<Image source>`. |
+| `size`        | `number`                              | `2`       | Cell size in CSS pixels. Larger = chunkier. |
+| `type`        | `'random' \| '2x2' \| '4x4' \| '8x8'` | `'8x8'`   | `8x8` is smoothest tonally; `2x2` is coarsest; `random` uses a hash. |
+| `colorBack`   | CSS colour string                     | `'#000'`  | |
+| `colorFront`  | CSS colour string                     | `'#fff'`  | |
+| `pixelRatio`  | `number`                              | `PixelRatio.get()` | Render-target DPR override. |
+
 ## Building your own shader
 
-Shaders are one short file. The shared `<ShaderMount/>` handles the
-`<Canvas/>`, the TypeGPU root, the render pipeline, the uniform buffer, and
-the frame loop — your shader file only describes the GPU work.
+Shaders in this package are image-shaders: they sample a source `GPUTexture`
+at `@group(0) @binding(1)` and write a colour. The shared `<ShaderMount/>`
+owns the `<Canvas/>`, the TypeGPU root, the render pipeline, the uniform
+buffer, and the (lazy, on-input) render loop — your shader file only
+describes the GPU work.
 
 ```ts
-// my-shaders/stripes.ts
+// my-shaders/posterize.ts
 import * as d from 'typegpu/data';
 import { wgsl, type ShaderModule } from 'react-native-shaders';
 
-export const StripesUniforms = d.struct({
-  time:       d.f32,
-  resolution: d.vec2f,
-  spacing:    d.f32,
-  color:      d.vec4f,
+export const PosterizeUniforms = d.struct({
+  resolution: d.vec2f,   // written by <ShaderMount/> every frame
+  levels:     d.f32,
 });
 
-export const stripesShader: ShaderModule<typeof StripesUniforms> = {
-  uniforms: StripesUniforms,
+export const posterizeShader: ShaderModule<typeof PosterizeUniforms> = {
+  uniforms: PosterizeUniforms,
   code: `
     ${wgsl.FULLSCREEN_TRIANGLE_VS}
 
-    struct Uniforms {
-      time: f32, resolution: vec2f, spacing: f32, color: vec4f,
-    };
+    struct Uniforms { resolution: vec2f, levels: f32, };
     @group(0) @binding(0) var<uniform> u: Uniforms;
+    @group(0) @binding(1) var srcTexture: texture_2d<f32>;
+    @group(0) @binding(2) var srcSampler: sampler;
 
     @fragment
     fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-      let band = step(0.5, fract((uv.x * u.resolution.x + u.time * 40.0) / u.spacing));
-      let a = band * u.color.a;
-      return vec4f(u.color.rgb * a, a);
+      let src = textureSample(srcTexture, srcSampler, uv);
+      let stepped = floor(src.rgb * u.levels) / u.levels;
+      return vec4f(stepped, 1.0);
     }
   `,
 };
 ```
 
 ```tsx
-// my-shaders/StripesShader.tsx
-import { memo, useMemo } from 'react';
+// my-shaders/PosterizeShader.tsx
+import { memo, useEffect, useMemo, useState } from 'react';
 import { ShaderMount, type ShaderViewProps } from 'react-native-shaders';
-import { stripesShader } from './stripes';
+import { posterizeShader } from './posterize';
 
-type Props = ShaderViewProps & { spacing?: number; color?: string };
+type Props = ShaderViewProps & { source: string; levels?: number };
 
-export const StripesShader = memo(function StripesShader({
-  spacing = 24,
-  color = '#fff',
+export const PosterizeShader = memo(function PosterizeShader({
+  source,
+  levels = 4,
   ...rest
 }: Props) {
-  const uniforms = useMemo(() => ({
-    spacing,
-    color: hexToRgba(color),
-  }), [spacing, color]);
-  return <ShaderMount shader={stripesShader} uniforms={uniforms} {...rest} />;
+  const [texture, setTexture] = useState<GPUTexture | null>(null);
+  // ...load `source` into a GPUTexture (see DitherShader.tsx for a reference).
+
+  const uniforms = useMemo(() => ({ levels }), [levels]);
+
+  return (
+    <ShaderMount
+      shader={posterizeShader}
+      uniforms={uniforms}
+      sourceTexture={texture}
+      {...rest}
+    />
+  );
 });
 ```
 
-`time` and `resolution` are written for you every frame. Anything else in
-your `d.struct` you set yourself via `uniforms`.
+A few rules to know:
+
+- The `resolution` field on your uniform struct is **always** auto-written
+  by `<ShaderMount/>` — declare it, don't set it. Every other field comes
+  from the `uniforms` prop, type-checked against your struct via
+  `UniformValues<U>`.
+- `<ShaderMount/>` re-renders on input change, not on a clock. There is no
+  built-in `time` uniform — if you need animation, drive a uniform from
+  `requestAnimationFrame` in your component.
+- `sourceTexture` is required. While it's `null`, the canvas stays blank.
+- The bind group layout is fixed: `@binding(0)` uniforms, `@binding(1)`
+  texture, `@binding(2)` sampler.
 
 ## What's exported
 
@@ -127,17 +159,22 @@ your `d.struct` you set yourself via `uniforms`.
 import {
   // Built-in components
   DitherShader,
+  type DitherShaderProps,
+  type DitherShaderSource,
+  type DitherType,
 
   // Authoring primitives
   ShaderMount,
+  type ShaderMountProps,
   type ShaderModule,
   type ShaderViewProps,
+  type UniformValues,
 
   // The built-in dither module (for composing into your own components)
   ditherShader,
   DitherUniforms,
 
-  // Reusable WGSL snippets (fullscreen triangle vs, bayer matrices, noise)
+  // Reusable WGSL snippets (currently: fullscreen triangle vertex shader)
   wgsl,
 } from 'react-native-shaders';
 ```
