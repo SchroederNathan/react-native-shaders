@@ -1,0 +1,102 @@
+{
+  "name": "react-native-shaders",
+  "version": "0.1.0",
+  "description": "Animated, type-safe GPU shader components for React Native, powered by TypeGPU and react-native-wgpu.",
+  "main": "lib/commonjs/index.js",
+  "module": "lib/module/index.js",
+  "types": "lib/typescript/src/index.d.ts",
+  "react-native": "src/index.ts",
+  "source": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/typescript/src/index.d.ts",
+      "react-native": "./src/index.ts",
+      "import": "./lib/module/index.js",
+      "require": "./lib/commonjs/index.js"
+    },
+    "./app.plugin.js": "./app.plugin.js"
+  },
+  "files": [
+    "src",
+    "lib",
+    "plugin",
+    "app.plugin.js",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*"
+  ],
+  "scripts": {
+    "build": "bob build && tsc -p tsconfig.plugin.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"**/*.{js,ts,tsx}\"",
+    "clean": "del-cli lib plugin/build",
+    "prepare": "bob build && tsc -p tsconfig.plugin.json",
+    "prepublishOnly": "bob build && tsc -p tsconfig.plugin.json",
+    "example": "yarn --cwd example start"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "shaders",
+    "webgpu",
+    "typegpu",
+    "wgsl",
+    "dither",
+    "gpu",
+    "graphics"
+  ],
+  "repository": "https://github.com/SchroederNathan/react-native-shaders",
+  "author": "Nathan Schroeder",
+  "license": "MIT",
+  "homepage": "https://github.com/SchroederNathan/react-native-shaders#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": ">=0.81.0",
+    "react-native-wgpu": ">=0.2.0",
+    "typegpu": ">=0.5.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "del-cli": "^6.0.0",
+    "react": "19.0.0",
+    "react-native": "0.81.0",
+    "react-native-builder-bob": "^0.40.0",
+    "react-native-wgpu": "^0.2.0",
+    "typegpu": "^0.5.0",
+    "typescript": "^5.6.0"
+  },
+  "expo": {
+    "plugins": [
+      "./app.plugin.js"
+    ]
+  },
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      [
+        "commonjs",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json",
+          "esm": true
+        }
+      ]
+    ]
+  }
+}

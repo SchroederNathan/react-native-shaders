@@ -1,0 +1,13 @@
+.github/
+example/
+.eslintrc*
+.editorconfig
+.gitignore
+.prettierrc*
+.watchmanconfig
+babel.config.js
+tsconfig.json
+tsconfig.build.json
+tsconfig.plugin.json
+*.log
+.DS_Store

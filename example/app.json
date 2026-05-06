@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "react-native-shaders-example",
+    "slug": "react-native-shaders-example",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "scheme": "rnshaders",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "com.schroedernathan.rnshaders.example",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.schroedernathan.rnshaders.example"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "react-native-shaders"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
