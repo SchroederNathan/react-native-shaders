@@ -21,37 +21,32 @@ export type ShaderModule<U extends d.WgslStruct = d.WgslStruct> = {
   fragmentEntry?: string;
   /** Defaults to `triangle-list`. */
   topology?: GPUPrimitiveTopology;
-  /** Defaults to premultiplied-alpha over for transparent overlays. */
+  /** Optional blend state. Default is no blend (opaque output). */
   blend?: GPUBlendState;
 };
 
 /**
  * Uniform values inferred from a `ShaderModule`'s struct schema, minus the
- * built-in `time` and `resolution` fields that `<ShaderMount/>` writes itself.
+ * built-in `resolution` field that `<ShaderMount/>` writes itself.
  */
 export type UniformValues<U extends d.WgslStruct> =
   U extends d.WgslStruct<infer P>
     ? {
-        [K in keyof P as K extends 'time' | 'resolution'
-          ? never
-          : K]: WgslDataToHost<P[K]>;
+        [K in keyof P as K extends 'resolution' ? never : K]: WgslDataToHost<
+          P[K]
+        >;
       }
     : never;
 
 type WgslDataToHost<T> =
   T extends d.F32 | d.I32 | d.U32 ? number
-  : T extends d.Vec2f | d.Vec2i | d.Vec2u ? readonly [number, number]
-  : T extends d.Vec3f | d.Vec3i | d.Vec3u ? readonly [number, number, number]
-  : T extends d.Vec4f | d.Vec4i | d.Vec4u
-    ? readonly [number, number, number, number]
-  : number | readonly number[];
+  : T extends d.Vec2f | d.Vec2i | d.Vec2u ? d.v2f | d.v2i | d.v2u
+  : T extends d.Vec3f | d.Vec3i | d.Vec3u ? d.v3f | d.v3i | d.v3u
+  : T extends d.Vec4f | d.Vec4i | d.Vec4u ? d.v4f | d.v4i | d.v4u
+  : unknown;
 
 /** Props every shader component (and `<ShaderMount/>`) accepts. */
 export type ShaderViewProps = ViewProps & {
-  /** Animation speed multiplier. 0 freezes the `time` uniform. Default 1. */
-  speed?: number;
-  /** Override the `time` uniform (in seconds). Disables the internal clock. */
-  frame?: number;
   /** Render-target pixel ratio override. Defaults to `PixelRatio.get()`. */
   pixelRatio?: number;
 };

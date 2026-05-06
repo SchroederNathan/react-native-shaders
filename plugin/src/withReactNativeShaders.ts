@@ -12,8 +12,6 @@ const pkg = {
  * which `react-native-wgpu` provides. This plugin nudges the iOS Info.plist
  * with the GPU capability hint so the build stays self-documenting; the
  * actual native bridge is owned by `react-native-wgpu`.
- *
- * If you've also installed `react-native-wgpu`, list its plugin here too.
  */
 const withReactNativeShaders: ConfigPlugin = (config) => {
   return withInfoPlist(config, (cfg) => {

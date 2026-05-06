@@ -1,6 +1,10 @@
 // Public components — start here.
 export { DitherShader } from './components/DitherShader';
-export type { DitherShaderProps } from './components/DitherShader';
+export type {
+  DitherShaderProps,
+  DitherShaderSource,
+  DitherType,
+} from './components/DitherShader';
 
 // Power-user surface for authoring custom shaders.
 export { ShaderMount } from './core/ShaderMount';

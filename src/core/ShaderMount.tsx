@@ -7,36 +7,41 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { PixelRatio, View, type LayoutChangeEvent } from 'react-native';
-import { Canvas, type CanvasRef } from 'react-native-wgpu';
-import type * as d from 'typegpu/data';
+import { View, type LayoutChangeEvent } from 'react-native';
+import {
+  Canvas,
+  type CanvasRef,
+  type RNCanvasContext,
+} from 'react-native-wgpu';
+import * as d from 'typegpu/data';
 
 import { buildPipeline, type BuiltPipeline } from './pipeline';
 import type { ShaderModule, ShaderViewProps, UniformValues } from './types';
-import { useRenderLoop } from './useRenderLoop';
 import { useTypeGPURoot } from './useTypeGPURoot';
 
 export type ShaderMountProps<U extends d.WgslStruct> = ShaderViewProps & {
   shader: ShaderModule<U>;
   uniforms: UniformValues<U>;
+  /**
+   * Source texture sampled by the fragment shader at `@group(0) @binding(1)`.
+   * `null` while the source is loading; the canvas stays blank in that case.
+   */
+  sourceTexture: GPUTexture | null;
 };
 
 /**
  * Shared base for every shader component in the package.
  *
- * Owns the `<Canvas/>`, TypeGPU root, render pipeline, uniform buffer, and
- * frame loop. Per-shader components (e.g. `<DitherShader/>`) are thin wrappers
- * that just compute `uniforms` from their props and forward them here.
- *
- * Power users can also use `<ShaderMount/>` directly with their own
- * `ShaderModule` for one-off custom shaders.
+ * Owns the `<Canvas/>`, render pipeline, uniform buffer, and frame loop.
+ * Per-shader components (e.g. `<DitherShader/>`) load source content into a
+ * GPUTexture and hand it down here; this component never touches image
+ * decoding or aspect-ratio math.
  */
 function ShaderMountInner<U extends d.WgslStruct>(
   {
     shader,
     uniforms,
-    speed = 1,
-    frame,
+    sourceTexture,
     pixelRatio,
     onLayout,
     style,
@@ -50,10 +55,16 @@ function ShaderMountInner<U extends d.WgslStruct>(
 
   const rootState = useTypeGPURoot();
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const [canvasReady, setCanvasReady] = useState(false);
 
-  const dpr = pixelRatio ?? PixelRatio.get();
-  const pxW = size ? Math.max(1, Math.round(size.w * dpr)) : 0;
-  const pxH = size ? Math.max(1, Math.round(size.h * dpr)) : 0;
+  // react-native-wgpu configures the swapchain at the View's CSS-pixel size,
+  // so `fragCoord` in WGSL is in CSS pixels. The `resolution` uniform we
+  // pass to the shader has to match that unit — passing physical pixels
+  // would put the shader's pixelization math out of step with the actual
+  // texture it's rendering into. `pixelRatio` is preserved on the prop
+  // type for future shaders that want to sub-pixel-sample.
+  const pxW = size ? Math.max(1, Math.round(size.w)) : 0;
+  const pxH = size ? Math.max(1, Math.round(size.h)) : 0;
 
   const handleLayout = useCallback(
     (e: LayoutChangeEvent) => {
@@ -69,52 +80,95 @@ function ShaderMountInner<U extends d.WgslStruct>(
   );
 
   const pipelineRef = useRef<BuiltPipeline<U> | null>(null);
-  const formatRef = useRef<GPUTextureFormat | null>(null);
+  // See ShaderMount history note: react-native-wgpu's getContext('webgpu')
+  // allocates a fresh JS wrapper each call (RNWebGPU.h:42). Cache it once
+  // per configured surface so the swapchain stays put.
+  const ctxRef = useRef<RNCanvasContext | null>(null);
+  const samplerRef = useRef<GPUSampler | null>(null);
 
-  // Configure context + (re)build pipeline whenever the device, shader, or
-  // canvas size changes. Re-creating the pipeline is cheap; reconfiguring the
-  // surface is required after a size change.
+  useEffect(() => {
+    setCanvasReady(false);
+    if (!size) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.whenReady(() => setCanvasReady(true));
+  }, [size]);
+
   useEffect(() => {
     if (rootState.status !== 'ready' || !canvasRef.current) return;
+    if (!canvasReady) return;
     if (pxW === 0 || pxH === 0) return;
+    if (!sourceTexture) return;
 
-    const ctx = canvasRef.current.getContext('webgpu');
+    let ctx: RNCanvasContext | null;
+    try {
+      ctx = canvasRef.current.getContext('webgpu');
+    } catch (err) {
+      if (__DEV__) {
+        console.error('[react-native-shaders] getContext failed', err);
+      }
+      return;
+    }
     if (!ctx) return;
+    ctxRef.current = ctx;
 
     const format = navigator.gpu.getPreferredCanvasFormat();
-    formatRef.current = format;
 
-    ctx.configure({
-      device: rootState.device,
-      format,
-      alphaMode: 'premultiplied',
-    });
+    if (!samplerRef.current) {
+      samplerRef.current = rootState.device.createSampler({
+        magFilter: 'linear',
+        minFilter: 'linear',
+        addressModeU: 'clamp-to-edge',
+        addressModeV: 'clamp-to-edge',
+      });
+    }
 
-    pipelineRef.current?.destroy();
-    pipelineRef.current = buildPipeline(rootState.root, shader, format);
+    try {
+      ctx.configure({
+        device: rootState.device,
+        format,
+        // Opaque output — the shader composites the source content into the
+        // canvas itself, so we don't need the OS compositor to blend.
+        alphaMode: 'opaque',
+      });
+      pipelineRef.current?.destroy();
+      pipelineRef.current = buildPipeline(
+        rootState.root,
+        shader,
+        format,
+        sourceTexture.createView(),
+        samplerRef.current,
+      );
+    } catch (err) {
+      if (__DEV__) {
+        console.error('[react-native-shaders] pipeline setup failed', err);
+      }
+      return;
+    }
 
     return () => {
       pipelineRef.current?.destroy();
       pipelineRef.current = null;
+      ctxRef.current = null;
     };
-  }, [rootState, shader, pxW, pxH]);
+  }, [rootState, shader, pxW, pxH, canvasReady, sourceTexture]);
 
-  // Track latest uniforms in a ref so the render loop reads fresh values
-  // without resubscribing every frame.
   const uniformsRef = useRef(uniforms);
   uniformsRef.current = uniforms;
 
-  const renderFrame = useCallback(
-    (time: number) => {
-      if (rootState.status !== 'ready') return;
-      const built = pipelineRef.current;
-      const ctx = canvasRef.current?.getContext('webgpu');
-      if (!built || !ctx) return;
+  // Render whenever any input changes. We don't run a continuous rAF loop
+  // because the dither output is purely a function of (uniforms, source) —
+  // re-presenting the same frame on a clock just burns the GPU.
+  useEffect(() => {
+    if (rootState.status !== 'ready') return;
+    const built = pipelineRef.current;
+    const ctx = ctxRef.current;
+    if (!built || !ctx) return;
 
+    try {
       const data = {
         ...(uniformsRef.current as Record<string, unknown>),
-        time,
-        resolution: [pxW, pxH] as const,
+        resolution: d.vec2f(pxW, pxH),
       };
       built.uniformBuffer.write(data as never);
 
@@ -124,7 +178,7 @@ function ShaderMountInner<U extends d.WgslStruct>(
         colorAttachments: [
           {
             view,
-            clearValue: { r: 0, g: 0, b: 0, a: 0 },
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
             loadOp: 'clear',
             storeOp: 'store',
           },
@@ -137,18 +191,13 @@ function ShaderMountInner<U extends d.WgslStruct>(
 
       rootState.device.queue.submit([encoder.finish()]);
       ctx.present();
-    },
-    [rootState, pxW, pxH],
-  );
+    } catch (err) {
+      if (__DEV__) {
+        console.error('[react-native-shaders] render failed', err);
+      }
+    }
+  }, [rootState, uniforms, pxW, pxH, sourceTexture, canvasReady]);
 
-  useRenderLoop({
-    enabled: rootState.status === 'ready' && pxW > 0 && pxH > 0,
-    onFrame: renderFrame,
-    speed,
-    frame,
-  });
-
-  // Render error message inline so misconfiguration is loud, not silent.
   const error =
     rootState.status === 'error' ? rootState.error.message : null;
 
@@ -168,12 +217,9 @@ function ShaderMountInner<U extends d.WgslStruct>(
         <Canvas
           ref={canvasRef}
           style={{ width: size.w, height: size.h }}
-          transparent
         />
       )}
-      {error && __DEV__ ? (
-        <ShaderError message={error} />
-      ) : null}
+      {error && __DEV__ ? <ShaderError message={error} /> : null}
     </View>
   );
 }
