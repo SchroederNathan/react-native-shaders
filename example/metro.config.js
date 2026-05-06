@@ -10,11 +10,10 @@ const workspaceRoot = path.resolve(projectRoot, '..');
 const config = getDefaultConfig(projectRoot);
 
 config.watchFolders = [workspaceRoot];
-config.resolver.nodeModulesPaths = [
-  path.resolve(projectRoot, 'node_modules'),
-  path.resolve(workspaceRoot, 'node_modules'),
-];
-config.resolver.disableHierarchicalLookup = true;
+// Files imported from outside example/ (notably ../src/**) won't find
+// react/react-native by walking up — the workspace root has no node_modules.
+// Pin Metro to the example's node_modules so all resolutions land here.
+config.resolver.nodeModulesPaths = [path.resolve(projectRoot, 'node_modules')];
 
 config.resolver.extraNodeModules = {
   'react-native-shaders': workspaceRoot,

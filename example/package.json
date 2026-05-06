@@ -11,20 +11,25 @@
     "prebuild": "expo prebuild"
   },
   "dependencies": {
-    "expo": "~54.0.0",
-    "expo-image": "~3.0.0",
-    "expo-router": "~6.0.0",
-    "expo-status-bar": "~3.0.0",
-    "react": "19.1.0",
-    "react-native": "0.81.4",
-    "react-native-safe-area-context": "^5.6.0",
-    "react-native-screens": "^4.16.0",
+    "expo": "^55.0.23",
+    "expo-constants": "~55.0.16",
+    "expo-image": "~55.0.10",
+    "expo-linking": "~55.0.15",
+    "expo-router": "~55.0.14",
+    "expo-status-bar": "~55.0.6",
+    "react": "19.2.0",
+    "react-native": "0.83.6",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.23.0",
     "react-native-wgpu": "^0.2.0",
     "typegpu": "^0.5.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
-    "@types/react": "~19.1.0",
+    "@types/react": "~19.2.10",
     "typescript": "^5.6.0"
+  },
+  "overrides": {
+    "react-dom": "19.2.0"
   }
 }

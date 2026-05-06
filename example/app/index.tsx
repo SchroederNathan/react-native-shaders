@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { useState } from 'react';
 import {
   Pressable,
@@ -7,49 +6,44 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { DitherShader } from 'react-native-shaders';
+import { DitherShader, type DitherType } from 'react-native-shaders';
 
 const PHOTO =
   'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=1200&q=80';
 
-const SCALES = [2, 4, 8, 16];
-const INTENSITIES = [0.25, 0.5, 0.75, 1];
-const SPEEDS = [0, 0.5, 1, 2];
+const SIZES = [1, 2, 4, 8];
+const TYPES: readonly DitherType[] = ['2x2', '4x4', '8x8', 'random'];
 
 export default function Demo() {
   const { width } = useWindowDimensions();
-  const size = Math.min(width - 32, 360);
+  const stage = Math.min(width - 32, 360);
 
-  const [scale, setScale] = useState(4);
-  const [intensity, setIntensity] = useState(0.5);
-  const [speed, setSpeed] = useState(1);
+  const [size, setSize] = useState(2);
+  const [type, setType] = useState<DitherType>('8x8');
 
   return (
     <View style={styles.root}>
-      <View style={[styles.stage, { width: size, height: size }]}>
-        <Image source={PHOTO} style={StyleSheet.absoluteFill} contentFit="cover" />
-        <DitherShader
-          style={StyleSheet.absoluteFill}
-          scale={scale}
-          intensity={intensity}
-          speed={speed}
-          color="#000"
-        />
-      </View>
-
-      <Picker label="scale" values={SCALES} value={scale} onChange={setScale} />
-      <Picker
-        label="intensity"
-        values={INTENSITIES}
-        value={intensity}
-        onChange={setIntensity}
+      <DitherShader
+        source={PHOTO}
+        style={[styles.stage, { width: stage, height: stage }]}
+        size={size}
+        type={type}
+        colorBack="#000000"
+        colorFront="#ffffff"
       />
-      <Picker label="speed" values={SPEEDS} value={speed} onChange={setSpeed} />
+
+      <Picker label="size" values={SIZES} value={size} onChange={setSize} />
+      <Picker
+        label="type"
+        values={TYPES}
+        value={type}
+        onChange={setType}
+      />
     </View>
   );
 }
 
-function Picker<T extends number>({
+function Picker<T extends string | number>({
   label,
   values,
   value,
@@ -94,8 +88,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   stage: {
-    borderRadius: 12,
-    overflow: 'hidden',
     backgroundColor: '#222',
   },
   row: { width: '100%', maxWidth: 360 },

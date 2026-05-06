@@ -5,7 +5,6 @@
     "version": "0.0.1",
     "orientation": "portrait",
     "scheme": "rnshaders",
-    "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "com.schroedernathan.rnshaders.example",
       "supportsTablet": true
@@ -18,7 +17,7 @@
     },
     "plugins": [
       "expo-router",
-      "react-native-shaders"
+      "./plugins/withReactNativeShaders"
     ],
     "experiments": {
       "typedRoutes": true
