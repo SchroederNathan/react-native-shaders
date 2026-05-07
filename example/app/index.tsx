@@ -23,18 +23,22 @@ import { DitherShader, type DitherType } from 'react-native-shaders';
 import {
   ColorPicker as ExpoColorPicker,
   Host,
-  HStack,
   LabeledContent,
+  Picker as ExpoPicker,
   Slider as ExpoSlider,
   Section,
   Form,
-  Stepper,
   Text as ExpoText,
 } from '@expo/ui/swift-ui';
 import {
   foregroundStyle,
   monospacedDigit,
+  pickerStyle,
+  tag,
 } from '@expo/ui/swift-ui/modifiers';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const PANEL_RADIUS = 28;
 
 const FALLBACK_PHOTO =
   'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=1200&q=80';
@@ -43,7 +47,8 @@ const TYPES: readonly DitherType[] = ['2x2', '4x4', '8x8', 'random'];
 
 export default function Demo() {
   const { width, height } = useWindowDimensions();
-  const stage = Math.min(width - 32, height * 0.4, 320);
+  const insets = useSafeAreaInsets();
+  const mediaHeight = Math.min(width, height * 0.55);
 
   const [size, setSize] = useState(2);
   const [type, setType] = useState<DitherType>('8x8');
@@ -134,7 +139,8 @@ export default function Demo() {
     <>
       <Stack.Screen
         options={{
-          title: 'Dither',
+          title: '',
+          headerLargeTitle: false,
           headerRight:
             Platform.OS === 'ios'
               ? undefined
@@ -152,52 +158,28 @@ export default function Demo() {
         }}
       />
       {Platform.OS === 'ios' && (
-        <Stack.Toolbar placement="bottom">
+        <Stack.Toolbar placement="right">
           <Stack.Toolbar.Button
             icon="photo.on.rectangle.angled"
             onPress={handlePick}
           />
-          <Stack.Toolbar.Menu icon="square.grid.2x2">
-            {TYPES.map((t) => (
-              <Stack.Toolbar.MenuAction
-                key={t}
-                isOn={t === type}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setType(t);
-                }}
-              >
-                {t}
-              </Stack.Toolbar.MenuAction>
-            ))}
-          </Stack.Toolbar.Menu>
-          <Stack.Toolbar.Spacer />
           <Stack.Toolbar.Button
             icon="square.and.arrow.down"
-            variant="prominent"
             disabled={saving}
             onPress={handleSave}
-            separateBackground
           />
         </Stack.Toolbar>
       )}
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        contentInsetAdjustmentBehavior="automatic"
-      >
+      <View style={styles.root}>
         <View
           ref={stageRef}
           collapsable={false}
-          style={[
-            styles.stageWrap,
-            { width: stage, height: stage },
-          ]}
+          style={[styles.media, { width, height: mediaHeight }]}
         >
           <DitherShader
             source={source}
             kind={sourceKind}
-            style={{ width: stage, height: stage }}
+            style={{ width, height: mediaHeight }}
             size={size}
             type={type}
             scale={scale}
@@ -206,36 +188,49 @@ export default function Demo() {
             colorFront={colorFront}
           />
         </View>
-        {Platform.OS === 'ios' ? (
-          <NativeControls
-            size={size}
-            scale={scale}
-            rotation={rotation}
-            colorBack={colorBack}
-            colorFront={colorFront}
-            onSizeChange={setSize}
-            onScaleChange={setScale}
-            onRotationChange={setRotation}
-            onColorBackChange={setColorBack}
-            onColorFrontChange={setColorFront}
-          />
-        ) : (
-          <ChipControls
-            size={size}
-            type={type}
-            scale={scale}
-            rotation={rotation}
-            colorBack={colorBack}
-            colorFront={colorFront}
-            onSizeChange={setSize}
-            onTypeChange={setType}
-            onScaleChange={setScale}
-            onRotationChange={setRotation}
-            onColorBackChange={setColorBack}
-            onColorFrontChange={setColorFront}
-          />
-        )}
-      </ScrollView>
+        <View style={styles.panel}>
+          <View style={styles.dragHandle} />
+          {Platform.OS === 'ios' ? (
+            <NativeControls
+              size={size}
+              type={type}
+              scale={scale}
+              rotation={rotation}
+              colorBack={colorBack}
+              colorFront={colorFront}
+              onSizeChange={setSize}
+              onTypeChange={setType}
+              onScaleChange={setScale}
+              onRotationChange={setRotation}
+              onColorBackChange={setColorBack}
+              onColorFrontChange={setColorFront}
+            />
+          ) : (
+            <ScrollView
+              style={styles.androidScroll}
+              contentContainerStyle={[
+                styles.androidScrollContent,
+                { paddingBottom: 24 + insets.bottom },
+              ]}
+            >
+              <ChipControls
+                size={size}
+                type={type}
+                scale={scale}
+                rotation={rotation}
+                colorBack={colorBack}
+                colorFront={colorFront}
+                onSizeChange={setSize}
+                onTypeChange={setType}
+                onScaleChange={setScale}
+                onRotationChange={setRotation}
+                onColorBackChange={setColorBack}
+                onColorFrontChange={setColorFront}
+              />
+            </ScrollView>
+          )}
+        </View>
+      </View>
     </>
   );
 }
@@ -276,42 +271,59 @@ function HeaderButton({
 
 function NativeControls({
   size,
+  type,
   scale,
   rotation,
   colorBack,
   colorFront,
   onSizeChange,
+  onTypeChange,
   onScaleChange,
   onRotationChange,
   onColorBackChange,
   onColorFrontChange,
 }: {
   size: number;
+  type: DitherType;
   scale: number;
   rotation: number;
   colorBack: string;
   colorFront: string;
   onSizeChange: (n: number) => void;
+  onTypeChange: (t: DitherType) => void;
   onScaleChange: (n: number) => void;
   onRotationChange: (n: number) => void;
   onColorBackChange: (c: string) => void;
   onColorFrontChange: (c: string) => void;
 }) {
+  const typeIndex = TYPES.indexOf(type);
   const valueModifiers = [
     monospacedDigit(),
     foregroundStyle({ type: 'hierarchical' as const, style: 'secondary' as const }),
   ];
   return (
-    <Host
-      matchContents={{ vertical: true }}
-      useViewportSizeMeasurement
-      colorScheme="dark"
-      style={styles.formHost}
-    >
+    <Host style={styles.formHost} colorScheme="dark">
       <Form>
         <Section>
-          <Stepper
-            label={`Cell size · ${size}px`}
+          <ExpoPicker
+            label="Matrix"
+            selection={typeIndex < 0 ? 0 : typeIndex}
+            onSelectionChange={(index) => {
+              Haptics.selectionAsync();
+              onTypeChange(TYPES[index] ?? '8x8');
+            }}
+            modifiers={[pickerStyle('segmented')]}
+          >
+            {TYPES.map((t, i) => (
+              <ExpoText key={t} modifiers={[tag(i)]}>
+                {t}
+              </ExpoText>
+            ))}
+          </ExpoPicker>
+          <LabeledContent label="Cell size">
+            <ExpoText modifiers={valueModifiers}>{size}px</ExpoText>
+          </LabeledContent>
+          <ExpoSlider
             value={size}
             min={1}
             max={12}
@@ -342,20 +354,18 @@ function NativeControls({
             step={1}
             onValueChange={(v) => onRotationChange(Math.round(v))}
           />
-          <HStack spacing={16}>
-            <ExpoColorPicker
-              label="Background"
-              selection={colorBack}
-              supportsOpacity
-              onSelectionChange={onColorBackChange}
-            />
-            <ExpoColorPicker
-              label="Foreground"
-              selection={colorFront}
-              supportsOpacity
-              onSelectionChange={onColorFrontChange}
-            />
-          </HStack>
+          <ExpoColorPicker
+            label="Background"
+            selection={colorBack}
+            supportsOpacity
+            onSelectionChange={onColorBackChange}
+          />
+          <ExpoColorPicker
+            label="Foreground"
+            selection={colorFront}
+            supportsOpacity
+            onSelectionChange={onColorFrontChange}
+          />
         </Section>
       </Form>
     </Host>
@@ -505,26 +515,30 @@ function ChipRow<T extends string | number>({
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: '#070707' },
-  scrollContent: {
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 16,
-    gap: 12,
-  },
-  stageWrap: {
+  root: { flex: 1, backgroundColor: '#000' },
+  media: { backgroundColor: '#000' },
+  panel: {
+    flex: 1,
+    marginTop: -PANEL_RADIUS,
     backgroundColor: '#000',
-    borderRadius: 14,
-    overflow: 'hidden',
+    borderTopLeftRadius: PANEL_RADIUS,
+    borderTopRightRadius: PANEL_RADIUS,
     borderCurve: 'continuous',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.08)',
-    boxShadow:
-      '0 1px 0 rgba(255,255,255,0.04) inset, 0 18px 48px rgba(0,0,0,0.6)',
+    overflow: 'hidden',
   },
-  formHost: { width: '100%', maxWidth: 480 },
-  fallback: { width: '100%', maxWidth: 480, gap: 28 },
+  dragHandle: {
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+    width: 36,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  formHost: { flex: 1 },
+  androidScroll: { flex: 1 },
+  androidScrollContent: { paddingHorizontal: 16, paddingTop: 12, gap: 24 },
+  fallback: { width: '100%', gap: 28 },
   group: { gap: 14 },
   groupTitle: {
     color: '#7a7a7a',

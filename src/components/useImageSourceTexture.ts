@@ -30,25 +30,9 @@ export function useImageSourceTexture(
 
     (async () => {
       try {
-        if (__DEV__) console.log('[react-native-shaders] loading', uri);
         const buffer = await fetchArrayBuffer(uri);
-        if (__DEV__) {
-          console.log(
-            '[react-native-shaders] fetched',
-            buffer.byteLength,
-            'bytes',
-          );
-        }
         const bitmap = await createImageBitmap(buffer);
         if (cancelled) return;
-        if (__DEV__) {
-          console.log(
-            '[react-native-shaders] decoded',
-            bitmap.width,
-            'x',
-            bitmap.height,
-          );
-        }
 
         const texture = rootState.device.createTexture({
           size: [bitmap.width, bitmap.height, 1],
@@ -64,7 +48,6 @@ export function useImageSourceTexture(
           [bitmap.width, bitmap.height],
         );
         if (cancelled) return;
-        if (__DEV__) console.log('[react-native-shaders] texture uploaded');
         setLoaded({ texture, width: bitmap.width, height: bitmap.height });
       } catch (err) {
         if (__DEV__) {

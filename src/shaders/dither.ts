@@ -126,10 +126,19 @@ export const ditherShader: ShaderModule<typeof DitherUniforms> = {
         sampleUv,
       );
 
+      // Native decoders (CGBitmapContext on iOS, BitmapFactory on Android)
+      // hand us premultiplied RGBA, so a transparent input pixel reads as
+      // RGB=0. Un-premultiply before computing luminance so transparent
+      // areas don't get treated as solid black; opaque pixels (alpha=1) are
+      // unaffected, so JPEGs continue to behave identically.
+      const srcAlpha = src.a;
+      const safeAlpha = std.max(srcAlpha, d.f32(0.0001));
+      const straightRgb = src.rgb.div(safeAlpha);
+
       // Perceptual luminance (Rec. 601). Drives the dither: brighter pixels
       // are more likely to land above threshold and pick up the front
       // colour.
-      const lum = std.dot(src.rgb, d.vec3f(0.299, 0.587, 0.114));
+      const lum = std.dot(straightRgb, d.vec3f(0.299, 0.587, 0.114));
 
       const blockUi = d.vec2u(d.u32(blockCoord.x), d.u32(blockCoord.y));
       let dithering = d.f32(0);
@@ -160,6 +169,9 @@ export const ditherShader: ShaderModule<typeof DitherUniforms> = {
       color = color.add(bg.mul(d.f32(1) - opacity));
       opacity = opacity + u.colorBack.a * (d.f32(1) - opacity);
 
-      return d.vec4f(color, opacity);
+      // Cut out: scale the dithered output by the source alpha so
+      // transparent input pixels produce transparent output. Premultiplied
+      // form is preserved for the canvas's `premultiplied` alpha mode.
+      return d.vec4f(color.mul(srcAlpha), opacity * srcAlpha);
     }),
 };

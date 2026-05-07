@@ -126,9 +126,13 @@ function ShaderMountInner<U extends d.WgslStruct>(
       ctx.configure({
         device: rootState.device,
         format,
-        // Opaque output — the shader composites the source content into the
-        // canvas itself, so we don't need the OS compositor to blend.
-        alphaMode: 'opaque',
+        // Premultiplied so the OS compositor honors the source alpha that
+        // the dither shader writes through (cutout behavior for transparent
+        // PNG pixels). The shader's output is already in premultiplied form
+        // — `color * srcAlpha`, `opacity * srcAlpha` — so this is a direct
+        // pass-through, not extra blending. JPEGs (alpha = 1) render
+        // identically to the prior `'opaque'` configuration.
+        alphaMode: 'premultiplied',
       });
       pipelineRef.current?.destroy();
       pipelineRef.current = buildPipeline(
