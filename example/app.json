@@ -17,7 +17,21 @@
     },
     "plugins": [
       "expo-router",
-      "./plugins/withReactNativeShaders"
+      "./plugins/withReactNativeShaders",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos to dither them."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos to dither them.",
+          "savePhotosPermission": "Allow $(PRODUCT_NAME) to save dithered images back to your library.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

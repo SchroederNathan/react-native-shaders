@@ -11,11 +11,15 @@
     "prebuild": "expo prebuild"
   },
   "dependencies": {
+    "@expo/ui": "~55.0.15",
     "expo": "^55.0.23",
     "expo-constants": "~55.0.16",
     "expo-dev-client": "~55.0.32",
+    "expo-haptics": "~55.0.14",
     "expo-image": "~55.0.10",
+    "expo-image-picker": "~55.0.20",
     "expo-linking": "~55.0.15",
+    "expo-media-library": "~55.0.16",
     "expo-router": "~55.0.14",
     "expo-status-bar": "~55.0.6",
     "react": "19.2.0",
@@ -23,6 +27,7 @@
     "react-native-reanimated": "4.2.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.23.0",
+    "react-native-view-shot": "4.0.3",
     "react-native-wgpu": "^0.5.11",
     "react-native-worklets": "0.7.4",
     "typegpu": "^0.11.3"
