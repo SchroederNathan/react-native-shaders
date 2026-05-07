@@ -17,6 +17,7 @@
     "expo-dev-client": "~55.0.32",
     "expo-haptics": "~55.0.14",
     "expo-image": "~55.0.10",
+    "expo-image-manipulator": "~55.0.16",
     "expo-image-picker": "~55.0.20",
     "expo-linking": "~55.0.15",
     "expo-media-library": "~55.0.16",

@@ -12,6 +12,10 @@ import {
 import { Stack } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
+import {
+  ImageManipulator,
+  SaveFormat,
+} from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library';
 import { captureRef } from 'react-native-view-shot';
 import { DitherShader, type DitherType } from 'react-native-shaders';
@@ -19,13 +23,19 @@ import { DitherShader, type DitherType } from 'react-native-shaders';
 import {
   ColorPicker as ExpoColorPicker,
   Host,
+  LabeledContent,
   Picker as ExpoPicker,
   Slider as ExpoSlider,
   Section,
   Form,
   Text as ExpoText,
 } from '@expo/ui/swift-ui';
-import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
+import {
+  foregroundStyle,
+  monospacedDigit,
+  pickerStyle,
+  tag,
+} from '@expo/ui/swift-ui/modifiers';
 
 const FALLBACK_PHOTO =
   'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=1200&q=80';
@@ -57,7 +67,24 @@ export default function Demo() {
     if (result.canceled) return;
     const asset = result.assets[0];
     if (!asset) return;
-    setSource(asset.uri);
+
+    try {
+      const rendered = await ImageManipulator.manipulate(
+        asset.uri,
+      ).renderAsync();
+      const normalized = await rendered.saveAsync({
+        format: SaveFormat.PNG,
+      });
+      setSource(normalized.uri);
+    } catch (err) {
+      if (__DEV__) {
+        console.warn(
+          '[example] image normalization failed, using raw uri',
+          err,
+        );
+      }
+      setSource(asset.uri);
+    }
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -267,6 +294,10 @@ function NativeControls({
   onColorFrontChange: (c: string) => void;
 }) {
   const typeIndex = TYPES.indexOf(type);
+  const valueModifiers = [
+    monospacedDigit(),
+    foregroundStyle({ type: 'hierarchical' as const, style: 'secondary' as const }),
+  ];
   return (
     <Host
       matchContents={{ vertical: true }}
@@ -291,8 +322,9 @@ function NativeControls({
               </ExpoText>
             ))}
           </ExpoPicker>
-        </Section>
-        <Section title={`Cell size — ${size}px`}>
+          <LabeledContent label="Cell size">
+            <ExpoText modifiers={valueModifiers}>{size}px</ExpoText>
+          </LabeledContent>
           <ExpoSlider
             value={size}
             min={1}
@@ -301,7 +333,12 @@ function NativeControls({
             onValueChange={(v) => onSizeChange(Math.round(v))}
           />
         </Section>
-        <Section title={`Scale — ${scale.toFixed(2)}×`}>
+        <Section title="Transform">
+          <LabeledContent label="Scale">
+            <ExpoText modifiers={valueModifiers}>
+              {scale.toFixed(2)}×
+            </ExpoText>
+          </LabeledContent>
           <ExpoSlider
             value={scale}
             min={0.25}
@@ -309,8 +346,11 @@ function NativeControls({
             step={0.05}
             onValueChange={(v) => onScaleChange(Math.round(v * 20) / 20)}
           />
-        </Section>
-        <Section title={`Rotation — ${Math.round(rotation)}°`}>
+          <LabeledContent label="Rotation">
+            <ExpoText modifiers={valueModifiers}>
+              {Math.round(rotation)}°
+            </ExpoText>
+          </LabeledContent>
           <ExpoSlider
             value={rotation}
             min={0}
@@ -374,59 +414,70 @@ function ChipControls({
 }) {
   return (
     <View style={styles.fallback}>
-      <ChipRow
-        label="Pattern"
-        values={TYPES}
-        value={type}
-        onChange={onTypeChange}
-      />
-      <ChipRow
-        label="Cell size"
-        values={[1, 2, 4, 8] as const}
-        value={size}
-        onChange={onSizeChange}
-      />
-      <ChipRow
-        label="Scale"
-        values={[0.5, 1, 2, 4] as const}
-        value={scale}
-        onChange={onScaleChange}
-      />
-      <ChipRow
-        label="Rotation"
-        values={[0, 90, 180, 270] as const}
-        value={rotation}
-        onChange={onRotationChange}
-      />
-      <View style={styles.row}>
-        <Text style={styles.rowLabel}>Colors</Text>
-        <View style={styles.chips}>
-          {COLOR_PRESETS.map((preset) => {
-            const active =
-              preset.back.toLowerCase() === colorBack.toLowerCase() &&
-              preset.front.toLowerCase() === colorFront.toLowerCase();
-            return (
-              <Pressable
-                key={preset.name}
-                onPress={() => {
-                  onColorBackChange(preset.back);
-                  onColorFrontChange(preset.front);
-                }}
-                style={[styles.swatch, active && styles.swatchActive]}
-              >
-                <View
-                  style={[styles.swatchFill, { backgroundColor: preset.back }]}
-                />
-                <View
-                  style={[
-                    styles.swatchFill,
-                    { backgroundColor: preset.front },
-                  ]}
-                />
-                <Text style={styles.swatchLabel}>{preset.name}</Text>
-              </Pressable>
-            );
-          })}
+      <View style={styles.group}>
+        <Text style={styles.groupTitle}>Pattern</Text>
+        <ChipRow
+          label="Matrix"
+          values={TYPES}
+          value={type}
+          onChange={onTypeChange}
+        />
+        <ChipRow
+          label="Cell size"
+          values={[1, 2, 4, 8] as const}
+          value={size}
+          onChange={onSizeChange}
+        />
+      </View>
+      <View style={styles.group}>
+        <Text style={styles.groupTitle}>Transform</Text>
+        <ChipRow
+          label="Scale"
+          values={[0.5, 1, 2, 4] as const}
+          value={scale}
+          onChange={onScaleChange}
+        />
+        <ChipRow
+          label="Rotation"
+          values={[0, 90, 180, 270] as const}
+          value={rotation}
+          onChange={onRotationChange}
+        />
+      </View>
+      <View style={styles.group}>
+        <Text style={styles.groupTitle}>Colors</Text>
+        <View style={styles.row}>
+          <View style={styles.chips}>
+            {COLOR_PRESETS.map((preset) => {
+              const active =
+                preset.back.toLowerCase() === colorBack.toLowerCase() &&
+                preset.front.toLowerCase() === colorFront.toLowerCase();
+              return (
+                <Pressable
+                  key={preset.name}
+                  onPress={() => {
+                    onColorBackChange(preset.back);
+                    onColorFrontChange(preset.front);
+                  }}
+                  style={[styles.swatch, active && styles.swatchActive]}
+                >
+                  <View
+                    style={[
+                      styles.swatchFill,
+                      { backgroundColor: preset.back },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.swatchFill,
+                      { backgroundColor: preset.front },
+                    ]}
+                  />
+                  <Text style={styles.swatchLabel}>{preset.name}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
       </View>
     </View>
@@ -509,7 +560,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   formHost: { width: '100%', maxWidth: 480 },
-  fallback: { width: '100%', maxWidth: 480, gap: 16 },
+  fallback: { width: '100%', maxWidth: 480, gap: 28 },
+  group: { gap: 14 },
+  groupTitle: {
+    color: '#7a7a7a',
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1.4,
+    marginBottom: 4,
+  },
   row: { width: '100%' },
   rowLabel: { color: '#aaa', fontSize: 12, marginBottom: 6 },
   chips: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
