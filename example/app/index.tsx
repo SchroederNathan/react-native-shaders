@@ -25,7 +25,6 @@ import {
   Host,
   HStack,
   LabeledContent,
-  Picker as ExpoPicker,
   Slider as ExpoSlider,
   Section,
   Form,
@@ -35,8 +34,6 @@ import {
 import {
   foregroundStyle,
   monospacedDigit,
-  pickerStyle,
-  tag,
 } from '@expo/ui/swift-ui/modifiers';
 
 const FALLBACK_PHOTO =
@@ -155,15 +152,32 @@ export default function Demo() {
         }}
       />
       {Platform.OS === 'ios' && (
-        <Stack.Toolbar placement="right">
+        <Stack.Toolbar placement="bottom">
           <Stack.Toolbar.Button
             icon="photo.on.rectangle.angled"
             onPress={handlePick}
           />
+          <Stack.Toolbar.Menu icon="square.grid.2x2">
+            {TYPES.map((t) => (
+              <Stack.Toolbar.MenuAction
+                key={t}
+                isOn={t === type}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setType(t);
+                }}
+              >
+                {t}
+              </Stack.Toolbar.MenuAction>
+            ))}
+          </Stack.Toolbar.Menu>
+          <Stack.Toolbar.Spacer />
           <Stack.Toolbar.Button
             icon="square.and.arrow.down"
+            variant="prominent"
             disabled={saving}
             onPress={handleSave}
+            separateBackground
           />
         </Stack.Toolbar>
       )}
@@ -192,42 +206,14 @@ export default function Demo() {
             colorFront={colorFront}
           />
         </View>
-        <View style={styles.specStrip} accessibilityRole="text">
-          <Text style={styles.specValue} selectable>
-            {type === 'random' ? 'random' : type.replace('x', '×')}
-          </Text>
-          <Text style={styles.specDot}>·</Text>
-          <Text style={styles.specValue} selectable>
-            {size}px
-          </Text>
-          <Text style={styles.specDot}>·</Text>
-          <Text style={styles.specValue} selectable>
-            {scale.toFixed(2)}×
-          </Text>
-          <Text style={styles.specDot}>·</Text>
-          <Text style={styles.specValue} selectable>
-            {Math.round(rotation)}°
-          </Text>
-          {sourceKind === 'video' ? (
-            <>
-              <Text style={styles.specDot}>·</Text>
-              <Text style={styles.specValue} selectable>
-                video
-              </Text>
-            </>
-          ) : null}
-        </View>
-
         {Platform.OS === 'ios' ? (
           <NativeControls
             size={size}
-            type={type}
             scale={scale}
             rotation={rotation}
             colorBack={colorBack}
             colorFront={colorFront}
             onSizeChange={setSize}
-            onTypeChange={setType}
             onScaleChange={setScale}
             onRotationChange={setRotation}
             onColorBackChange={setColorBack}
@@ -290,32 +276,27 @@ function HeaderButton({
 
 function NativeControls({
   size,
-  type,
   scale,
   rotation,
   colorBack,
   colorFront,
   onSizeChange,
-  onTypeChange,
   onScaleChange,
   onRotationChange,
   onColorBackChange,
   onColorFrontChange,
 }: {
   size: number;
-  type: DitherType;
   scale: number;
   rotation: number;
   colorBack: string;
   colorFront: string;
   onSizeChange: (n: number) => void;
-  onTypeChange: (t: DitherType) => void;
   onScaleChange: (n: number) => void;
   onRotationChange: (n: number) => void;
   onColorBackChange: (c: string) => void;
   onColorFrontChange: (c: string) => void;
 }) {
-  const typeIndex = TYPES.indexOf(type);
   const valueModifiers = [
     monospacedDigit(),
     foregroundStyle({ type: 'hierarchical' as const, style: 'secondary' as const }),
@@ -329,21 +310,6 @@ function NativeControls({
     >
       <Form>
         <Section>
-          <ExpoPicker
-            label="Matrix"
-            selection={typeIndex < 0 ? 0 : typeIndex}
-            onSelectionChange={(index) => {
-              Haptics.selectionAsync();
-              onTypeChange(TYPES[index] ?? '8x8');
-            }}
-            modifiers={[pickerStyle('segmented')]}
-          >
-            {TYPES.map((t, i) => (
-              <ExpoText key={t} modifiers={[tag(i)]}>
-                {t}
-              </ExpoText>
-            ))}
-          </ExpoPicker>
           <Stepper
             label={`Cell size · ${size}px`}
             value={size}
@@ -359,7 +325,7 @@ function NativeControls({
           </LabeledContent>
           <ExpoSlider
             value={scale}
-            min={0.25}
+            min={1}
             max={4}
             step={0.05}
             onValueChange={(v) => onScaleChange(Math.round(v * 20) / 20)}
@@ -451,7 +417,7 @@ function ChipControls({
         <Text style={styles.groupTitle}>Transform</Text>
         <ChipRow
           label="Scale"
-          values={[0.5, 1, 2, 4] as const}
+          values={[1, 1.5, 2, 4] as const}
           value={scale}
           onChange={onScaleChange}
         />
@@ -544,8 +510,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 56,
-    gap: 14,
+    paddingBottom: 16,
+    gap: 12,
   },
   stageWrap: {
     backgroundColor: '#000',
@@ -556,26 +522,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
     boxShadow:
       '0 1px 0 rgba(255,255,255,0.04) inset, 0 18px 48px rgba(0,0,0,0.6)',
-  },
-  specStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingTop: 2,
-    paddingBottom: 6,
-  },
-  specValue: {
-    color: '#7a7a7a',
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 1.6,
-    fontVariant: ['tabular-nums'],
-    textTransform: 'uppercase',
-  },
-  specDot: {
-    color: '#3a3a3a',
-    fontSize: 10,
-    fontWeight: '600',
   },
   formHost: { width: '100%', maxWidth: 480 },
   fallback: { width: '100%', maxWidth: 480, gap: 28 },
