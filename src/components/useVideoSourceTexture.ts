@@ -2,6 +2,31 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { useTypeGPURoot } from '../core/useTypeGPURoot';
 
+// Shared with useImageSourceTexture — XHR is more reliable than fetch() for
+// `file://` URIs on Android and for the temp paths that ImagePicker /
+// VideoThumbnails hand out.
+function fetchArrayBuffer(uri: string): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', uri, true);
+    xhr.responseType = 'arraybuffer';
+    xhr.onload = () => {
+      if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
+        const response = xhr.response;
+        if (response instanceof ArrayBuffer) {
+          resolve(response);
+        } else {
+          reject(new Error('XHR returned non-ArrayBuffer response'));
+        }
+      } else {
+        reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText || 'failed'}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error(`network error fetching ${uri}`));
+    xhr.send();
+  });
+}
+
 type VideoSourceState = {
   texture: GPUTexture | null;
   width: number;
@@ -138,8 +163,7 @@ export function useVideoSourceTexture(
 
         let bitmap: ImageBitmap;
         try {
-          const response = await fetch(thumb.uri);
-          const buffer = await response.arrayBuffer();
+          const buffer = await fetchArrayBuffer(thumb.uri);
           bitmap = await createImageBitmap(buffer);
         } catch (err) {
           if (__DEV__) {

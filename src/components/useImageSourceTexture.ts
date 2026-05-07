@@ -30,14 +30,7 @@ export function useImageSourceTexture(
 
     (async () => {
       try {
-        const response = await fetch(uri);
-        // Read raw bytes rather than going through Blob → RCTBlobManager.
-        // The blob path depends on `Blob._data.blobId` round-tripping through
-        // the blob manager, which doesn't reliably populate for all URI
-        // schemes (notably `ph://`, `file://` from ImagePicker, and `data:`).
-        // Native `createImageBitmap` decodes ArrayBuffers via UIImage /
-        // BitmapFactory, so PNG and JPEG both decode identically here.
-        const buffer = await response.arrayBuffer();
+        const buffer = await fetchArrayBuffer(uri);
         const bitmap = await createImageBitmap(buffer);
         if (cancelled) return;
 
@@ -58,7 +51,11 @@ export function useImageSourceTexture(
         setLoaded({ texture, width: bitmap.width, height: bitmap.height });
       } catch (err) {
         if (__DEV__) {
-          console.error('[react-native-shaders] image load failed', err);
+          console.error(
+            '[react-native-shaders] image load failed for',
+            uri,
+            err,
+          );
         }
       }
     })();
@@ -71,4 +68,33 @@ export function useImageSourceTexture(
   }, [rootState, uri]);
 
   return loaded;
+}
+
+// Use XHR rather than fetch(): RN's fetch doesn't reliably handle every URI
+// scheme we get here (notably `file://` on Android, `ph://`, and ImagePicker
+// temp paths). XHR with responseType='arraybuffer' goes through a native
+// path that does, and skips the Blob/BlobManager round-trip entirely.
+function fetchArrayBuffer(uri: string): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', uri, true);
+    xhr.responseType = 'arraybuffer';
+    xhr.onload = () => {
+      // status === 0 is the normal "success" for file://, content://, and
+      // bundled-asset URIs — they have no HTTP layer.
+      if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
+        const response = xhr.response;
+        if (response instanceof ArrayBuffer) {
+          resolve(response);
+        } else {
+          reject(new Error('XHR returned non-ArrayBuffer response'));
+        }
+      } else {
+        reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText || 'failed'}`));
+      }
+    };
+    xhr.onerror = () =>
+      reject(new Error(`network error fetching ${uri}`));
+    xhr.send();
+  });
 }
