@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useState } from 'react';
+import React, { memo, useMemo } from 'react';
 import * as d from 'typegpu/data';
 
 import { ShaderMount } from '../core/ShaderMount';
@@ -12,6 +12,8 @@ import {
   ditherShader,
 } from '../shaders/dither';
 import { useTypeGPURoot } from '../core/useTypeGPURoot';
+import { useImageSourceTexture } from './useImageSourceTexture';
+import { useVideoSourceTexture } from './useVideoSourceTexture';
 
 export type DitherShaderSource =
   | string
@@ -20,12 +22,35 @@ export type DitherShaderSource =
 
 export type DitherType = 'random' | '2x2' | '4x4' | '8x8';
 
+export type DitherShaderKind = 'auto' | 'image' | 'video';
+
 export type DitherShaderProps = ShaderViewProps & {
   /**
-   * Image to be dithered. Accepts a remote URL string, an `{ uri }` object,
-   * or a `require(...)`'d local asset — same semantics as `<Image source>`.
+   * Image or video to be dithered. Accepts a remote URL string, an
+   * `{ uri }` object, or a `require(...)`'d local asset — same semantics
+   * as `<Image source>`. Video URIs are detected by extension (see
+   * `kind`); install `expo-video-thumbnails` to enable video playback.
    */
   source: DitherShaderSource;
+  /**
+   * How to interpret `source`. `'auto'` (default) sniffs the URI's
+   * extension — `.mp4 .mov .m4v .webm .avi` are treated as video,
+   * anything else as image. Set explicitly to override.
+   */
+  kind?: DitherShaderKind;
+  /**
+   * Frames per second for video playback. Default `15`. The video is
+   * pre-decoded into bitmaps at component mount; higher fps means more
+   * frames decoded and more memory.
+   */
+  videoFps?: number;
+  /**
+   * Hard cap on pre-decoded video frames. Default `120`. Acts as a memory
+   * fuse for long videos — playback loops earlier than the source. Worst
+   * case bitmap memory ≈ `maxVideoFrames × videoWidth × videoHeight × 4`
+   * bytes.
+   */
+  maxVideoFrames?: number;
   /**
    * Dither cell size in CSS pixels (multiplied internally by the device
    * pixel ratio). Larger values give a chunkier, more obviously pixelated
@@ -55,12 +80,6 @@ export type DitherShaderProps = ShaderViewProps & {
   rotation?: number;
 };
 
-type LoadedTexture = {
-  texture: GPUTexture;
-  width: number;
-  height: number;
-};
-
 const DITHER_TYPE_MAP: Record<DitherType, number> = {
   random: DITHER_TYPE_RANDOM,
   '2x2': DITHER_TYPE_2X2,
@@ -68,30 +87,38 @@ const DITHER_TYPE_MAP: Record<DitherType, number> = {
   '8x8': DITHER_TYPE_8X8,
 };
 
+const VIDEO_EXT = /\.(mp4|mov|m4v|webm|avi)(\?.*)?$/i;
+
 /**
- * Renders an image dithered to two colours through a Bayer (or random)
- * threshold matrix — a faithful port of paper-design/shaders' dithering
- * algorithm, adapted to sample an image instead of a procedural pattern.
+ * Renders an image or video dithered to two colours through a Bayer (or
+ * random) threshold matrix — a faithful port of paper-design/shaders'
+ * dithering algorithm, adapted to sample a media texture instead of a
+ * procedural pattern.
  *
  * The dither field is anchored to the canvas pixel grid, not the source.
  * For animated sources (videos, paged images) the underlying pixels travel
  * through a static threshold field — this is the classic retro-CRT look
  * and exactly the behaviour you want when dithering video frames.
  *
+ * Video playback pre-decodes a bounded set of frames at mount via
+ * `expo-video-thumbnails` (an optional peer dependency), then cycles them
+ * at `videoFps`. See `videoFps` and `maxVideoFrames` for memory tuning.
+ *
  * @example
  * ```tsx
  * <DitherShader
- *   source="https://example.com/photo.jpg"
+ *   source="https://example.com/clip.mp4"
  *   style={{ width: 360, height: 360 }}
- *   size={2}
+ *   videoFps={15}
  *   type="8x8"
- *   colorBack="#000000"
- *   colorFront="#ffffff"
  * />
  * ```
  */
 export const DitherShader = memo(function DitherShader({
   source,
+  kind = 'auto',
+  videoFps = 15,
+  maxVideoFrames = 120,
   size = 2,
   type = '8x8',
   colorBack = '#000',
@@ -104,53 +131,44 @@ export const DitherShader = memo(function DitherShader({
   const rootState = useTypeGPURoot();
   const sourceUri = useMemo(() => resolveSource(source), [source]);
 
-  const [loaded, setLoaded] = useState<LoadedTexture | null>(null);
+  const resolvedKind: 'image' | 'video' = useMemo(() => {
+    if (kind !== 'auto') return kind;
+    return sourceUri && VIDEO_EXT.test(sourceUri) ? 'video' : 'image';
+  }, [kind, sourceUri]);
 
-  useEffect(() => {
-    if (rootState.status !== 'ready' || !sourceUri) return;
-    let cancelled = false;
+  // Always call both hooks (rules of hooks). The inactive one receives a
+  // null URI and short-circuits without allocating GPU resources.
+  const imageLoaded = useImageSourceTexture(
+    resolvedKind === 'image' ? sourceUri : null,
+    rootState,
+  );
+  const videoLoaded = useVideoSourceTexture(
+    resolvedKind === 'video' ? sourceUri : null,
+    rootState,
+    videoFps,
+    maxVideoFrames,
+  );
 
-    (async () => {
-      try {
-        const response = await fetch(sourceUri);
-        const blob = await response.blob();
-        const bitmap = await createImageBitmap(blob);
-        if (cancelled) return;
-
-        const texture = rootState.device.createTexture({
-          size: [bitmap.width, bitmap.height, 1],
-          format: 'rgba8unorm',
-          usage:
-            GPUTextureUsage.TEXTURE_BINDING |
-            GPUTextureUsage.COPY_DST |
-            GPUTextureUsage.RENDER_ATTACHMENT,
-        });
-        rootState.device.queue.copyExternalImageToTexture(
-          { source: bitmap },
-          { texture },
-          [bitmap.width, bitmap.height],
-        );
-        if (cancelled) return;
-        setLoaded({ texture, width: bitmap.width, height: bitmap.height });
-      } catch (err) {
-        if (__DEV__) {
-          console.error('[react-native-shaders] image load failed', err);
+  const active =
+    resolvedKind === 'video'
+      ? {
+          texture: videoLoaded.texture,
+          width: videoLoaded.width,
+          height: videoLoaded.height,
+          frameVersion: videoLoaded.frameVersion,
         }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      // Don't call texture.destroy() — the GPUBindGroup holds a reference
-      // through the rendering chain and Dawn reclaims memory on GC.
-    };
-  }, [rootState, sourceUri]);
+      : {
+          texture: imageLoaded?.texture ?? null,
+          width: imageLoaded?.width ?? 0,
+          height: imageLoaded?.height ?? 0,
+          frameVersion: 0,
+        };
 
   const uniforms = useMemo(() => {
     const [br, bg, bb, ba] = parseColor(colorBack);
     const [fr, fg, fb, fa] = parseColor(colorFront);
     return {
-      imageSize: d.vec2f(loaded?.width ?? 1, loaded?.height ?? 1),
+      imageSize: d.vec2f(active.width || 1, active.height || 1),
       // pxSize matches `fragCoord`'s units in the shader. react-native-wgpu
       // configures the swapchain at CSS pixels, so we pass `size` in CSS
       // pixels directly — no DPR multiplier (paper-design multiplies by DPR
@@ -162,13 +180,23 @@ export const DitherShader = memo(function DitherShader({
       scale,
       rotation: (rotation * Math.PI) / 180,
     };
-  }, [size, type, colorBack, colorFront, scale, rotation, loaded]);
+  }, [
+    size,
+    type,
+    colorBack,
+    colorFront,
+    scale,
+    rotation,
+    active.width,
+    active.height,
+  ]);
 
   return (
     <ShaderMount
       shader={ditherShader}
       uniforms={uniforms}
-      sourceTexture={loaded?.texture ?? null}
+      sourceTexture={active.texture}
+      frameVersion={active.frameVersion}
       pixelRatio={pixelRatio}
       {...rest}
     />

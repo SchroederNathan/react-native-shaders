@@ -28,6 +28,13 @@ export type ShaderMountProps<U extends d.WgslStruct> = ShaderViewProps & {
    * the source is loading; the canvas stays blank in that case.
    */
   sourceTexture: GPUTexture | null;
+  /**
+   * Opt-in render trigger for animated sources that mutate `sourceTexture`
+   * in place (e.g. video playback). Bumping this counter forces a re-render
+   * even though the texture object identity is stable. Leave undefined for
+   * static sources.
+   */
+  frameVersion?: number;
 };
 
 /**
@@ -43,6 +50,7 @@ function ShaderMountInner<U extends d.WgslStruct>(
     shader,
     uniforms,
     sourceTexture,
+    frameVersion,
     pixelRatio,
     onLayout,
     style,
@@ -149,7 +157,10 @@ function ShaderMountInner<U extends d.WgslStruct>(
 
   // Render whenever any input changes. We don't run a continuous rAF loop
   // because the dither output is purely a function of (uniforms, source) —
-  // re-presenting the same frame on a clock just burns the GPU.
+  // re-presenting the same frame on a clock just burns the GPU. For animated
+  // sources that mutate `sourceTexture` in place (e.g. video playback), the
+  // parent bumps `frameVersion` to retrigger this effect without invalidating
+  // the cached pipeline/bind group above.
   useEffect(() => {
     if (rootState.status !== 'ready') return;
     const built = pipelineRef.current;
@@ -182,7 +193,7 @@ function ShaderMountInner<U extends d.WgslStruct>(
         console.error('[react-native-shaders] render failed', err);
       }
     }
-  }, [rootState, uniforms, pxW, pxH, sourceTexture]);
+  }, [rootState, uniforms, pxW, pxH, sourceTexture, frameVersion]);
 
   const error =
     rootState.status === 'error' ? rootState.error.message : null;

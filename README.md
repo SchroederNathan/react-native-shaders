@@ -64,14 +64,47 @@ the longer axis. The dither field is anchored to the canvas pixel grid, not
 the source, so for animated sources the underlying pixels travel through a
 static threshold field — the classic retro-CRT look.
 
-| Prop          | Type                                  | Default   | Notes |
-| ------------- | ------------------------------------- | --------- | ----- |
-| `source`      | `string \| { uri } \| require(...)`   | —         | Same semantics as `<Image source>`. |
-| `size`        | `number`                              | `2`       | Cell size in CSS pixels. Larger = chunkier. |
-| `type`        | `'random' \| '2x2' \| '4x4' \| '8x8'` | `'8x8'`   | `8x8` is smoothest tonally; `2x2` is coarsest; `random` uses a hash. |
-| `colorBack`   | CSS colour string                     | `'#000'`  | |
-| `colorFront`  | CSS colour string                     | `'#fff'`  | |
-| `pixelRatio`  | `number`                              | `PixelRatio.get()` | Render-target DPR override. |
+| Prop              | Type                                  | Default   | Notes |
+| ----------------- | ------------------------------------- | --------- | ----- |
+| `source`          | `string \| { uri } \| require(...)`   | —         | Same semantics as `<Image source>`. Accepts video URIs — see below. |
+| `kind`            | `'auto' \| 'image' \| 'video'`        | `'auto'`  | `auto` sniffs the URI extension. |
+| `videoFps`        | `number`                              | `15`      | Video playback fps. |
+| `maxVideoFrames`  | `number`                              | `120`     | Pre-decoded frame cap (memory fuse). |
+| `size`            | `number`                              | `2`       | Cell size in CSS pixels. Larger = chunkier. |
+| `type`            | `'random' \| '2x2' \| '4x4' \| '8x8'` | `'8x8'`   | `8x8` is smoothest tonally; `2x2` is coarsest; `random` uses a hash. |
+| `colorBack`       | CSS colour string                     | `'#000'`  | |
+| `colorFront`      | CSS colour string                     | `'#fff'`  | |
+| `pixelRatio`      | `number`                              | `PixelRatio.get()` | Render-target DPR override. |
+
+#### Video sources
+
+Pass a video URI (`.mp4 .mov .m4v .webm .avi`) and `<DitherShader/>` will
+play it back through the dither pipeline:
+
+```tsx
+<DitherShader
+  source={videoUri}
+  videoFps={15}
+  maxVideoFrames={120}
+  style={{ width: 360, height: 360 }}
+/>
+```
+
+Install the optional peer to enable video:
+
+```sh
+npx expo install expo-video-thumbnails
+```
+
+Frames are pre-decoded at component mount and cycled in a JS-side loop, so
+playback is bounded — at the defaults, the first ~8s of the video play and
+then loop. Tune `videoFps` and `maxVideoFrames` for longer clips. Worst
+case in-memory bitmap size is `maxVideoFrames × videoWidth × videoHeight ×
+4` bytes; lower the cap or pre-downsize the video for large source files.
+
+True streaming playback (per-frame hardware decode straight into a
+`GPUTexture`) would require a native module bridging
+`AVPlayerItemVideoOutput` / `MediaCodec` and is on the roadmap.
 
 ## Building your own shader
 

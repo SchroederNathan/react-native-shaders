@@ -53,6 +53,7 @@ export default function Demo() {
   const [colorBack, setColorBack] = useState('#000000');
   const [colorFront, setColorFront] = useState('#ffffff');
   const [source, setSource] = useState<string>(FALLBACK_PHOTO);
+  const [sourceKind, setSourceKind] = useState<'image' | 'video'>('image');
   const [saving, setSaving] = useState(false);
 
   const stageRef = useRef<View>(null);
@@ -68,6 +69,14 @@ export default function Demo() {
     const asset = result.assets[0];
     if (!asset) return;
 
+    if (asset.type === 'video') {
+      // ImageManipulator can't decode video URIs — pass straight through;
+      // DitherShader sniffs the extension and pre-decodes frames itself.
+      setSourceKind('video');
+      setSource(asset.uri);
+      return;
+    }
+
     try {
       const rendered = await ImageManipulator.manipulate(
         asset.uri,
@@ -75,6 +84,7 @@ export default function Demo() {
       const normalized = await rendered.saveAsync({
         format: SaveFormat.PNG,
       });
+      setSourceKind('image');
       setSource(normalized.uri);
     } catch (err) {
       if (__DEV__) {
@@ -83,6 +93,7 @@ export default function Demo() {
           err,
         );
       }
+      setSourceKind('image');
       setSource(asset.uri);
     }
   }, []);
@@ -169,6 +180,7 @@ export default function Demo() {
         >
           <DitherShader
             source={source}
+            kind={sourceKind}
             style={{ width: stage, height: stage }}
             size={size}
             type={type}
@@ -194,6 +206,14 @@ export default function Demo() {
           <Text style={styles.specValue} selectable>
             {Math.round(rotation)}°
           </Text>
+          {sourceKind === 'video' ? (
+            <>
+              <Text style={styles.specDot}>·</Text>
+              <Text style={styles.specValue} selectable>
+                video
+              </Text>
+            </>
+          ) : null}
         </View>
 
         {Platform.OS === 'ios' ? (
