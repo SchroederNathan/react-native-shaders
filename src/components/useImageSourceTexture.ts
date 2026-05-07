@@ -31,8 +31,14 @@ export function useImageSourceTexture(
     (async () => {
       try {
         const response = await fetch(uri);
-        const blob = await response.blob();
-        const bitmap = await createImageBitmap(blob);
+        // Read raw bytes rather than going through Blob → RCTBlobManager.
+        // The blob path depends on `Blob._data.blobId` round-tripping through
+        // the blob manager, which doesn't reliably populate for all URI
+        // schemes (notably `ph://`, `file://` from ImagePicker, and `data:`).
+        // Native `createImageBitmap` decodes ArrayBuffers via UIImage /
+        // BitmapFactory, so PNG and JPEG both decode identically here.
+        const buffer = await response.arrayBuffer();
+        const bitmap = await createImageBitmap(buffer);
         if (cancelled) return;
 
         const texture = rootState.device.createTexture({

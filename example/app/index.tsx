@@ -23,11 +23,13 @@ import { DitherShader, type DitherType } from 'react-native-shaders';
 import {
   ColorPicker as ExpoColorPicker,
   Host,
+  HStack,
   LabeledContent,
   Picker as ExpoPicker,
   Slider as ExpoSlider,
   Section,
   Form,
+  Stepper,
   Text as ExpoText,
 } from '@expo/ui/swift-ui';
 import {
@@ -43,8 +45,8 @@ const FALLBACK_PHOTO =
 const TYPES: readonly DitherType[] = ['2x2', '4x4', '8x8', 'random'];
 
 export default function Demo() {
-  const { width } = useWindowDimensions();
-  const stage = Math.min(width - 32, 360);
+  const { width, height } = useWindowDimensions();
+  const stage = Math.min(width - 32, height * 0.4, 320);
 
   const [size, setSize] = useState(2);
   const [type, setType] = useState<DitherType>('8x8');
@@ -326,7 +328,7 @@ function NativeControls({
       style={styles.formHost}
     >
       <Form>
-        <Section title="Pattern">
+        <Section>
           <ExpoPicker
             label="Matrix"
             selection={typeIndex < 0 ? 0 : typeIndex}
@@ -342,18 +344,14 @@ function NativeControls({
               </ExpoText>
             ))}
           </ExpoPicker>
-          <LabeledContent label="Cell size">
-            <ExpoText modifiers={valueModifiers}>{size}px</ExpoText>
-          </LabeledContent>
-          <ExpoSlider
+          <Stepper
+            label={`Cell size · ${size}px`}
             value={size}
             min={1}
             max={12}
             step={1}
             onValueChange={(v) => onSizeChange(Math.round(v))}
           />
-        </Section>
-        <Section title="Transform">
           <LabeledContent label="Scale">
             <ExpoText modifiers={valueModifiers}>
               {scale.toFixed(2)}×
@@ -378,20 +376,20 @@ function NativeControls({
             step={1}
             onValueChange={(v) => onRotationChange(Math.round(v))}
           />
-        </Section>
-        <Section title="Colors">
-          <ExpoColorPicker
-            label="Background"
-            selection={colorBack}
-            supportsOpacity
-            onSelectionChange={onColorBackChange}
-          />
-          <ExpoColorPicker
-            label="Foreground"
-            selection={colorFront}
-            supportsOpacity
-            onSelectionChange={onColorFrontChange}
-          />
+          <HStack spacing={16}>
+            <ExpoColorPicker
+              label="Background"
+              selection={colorBack}
+              supportsOpacity
+              onSelectionChange={onColorBackChange}
+            />
+            <ExpoColorPicker
+              label="Foreground"
+              selection={colorFront}
+              supportsOpacity
+              onSelectionChange={onColorFrontChange}
+            />
+          </HStack>
         </Section>
       </Form>
     </Host>
@@ -562,9 +560,9 @@ const styles = StyleSheet.create({
   specStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingTop: 4,
-    paddingBottom: 14,
+    gap: 8,
+    paddingTop: 2,
+    paddingBottom: 6,
   },
   specValue: {
     color: '#7a7a7a',

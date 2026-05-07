@@ -139,8 +139,8 @@ export function useVideoSourceTexture(
         let bitmap: ImageBitmap;
         try {
           const response = await fetch(thumb.uri);
-          const blob = await response.blob();
-          bitmap = await createImageBitmap(blob);
+          const buffer = await response.arrayBuffer();
+          bitmap = await createImageBitmap(buffer);
         } catch (err) {
           if (__DEV__) {
             console.error(
