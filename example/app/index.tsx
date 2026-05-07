@@ -9,6 +9,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Stack } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
@@ -32,13 +33,16 @@ import {
 } from '@expo/ui/swift-ui';
 import {
   foregroundStyle,
+  listRowBackground,
+  listStyle,
   monospacedDigit,
   pickerStyle,
+  scrollContentBackground,
   tag,
 } from '@expo/ui/swift-ui/modifiers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const PANEL_RADIUS = 28;
+const PANEL_RADIUS = 16;
 
 const FALLBACK_PHOTO =
   'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=1200&q=80';
@@ -137,40 +141,8 @@ export default function Demo() {
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: '',
-          headerLargeTitle: false,
-          headerRight:
-            Platform.OS === 'ios'
-              ? undefined
-              : () => (
-                  <View style={styles.headerActions}>
-                    <HeaderButton label="Pick" onPress={handlePick} />
-                    <HeaderButton
-                      label={saving ? 'Saving…' : 'Save'}
-                      onPress={handleSave}
-                      disabled={saving}
-                      emphasized
-                    />
-                  </View>
-                ),
-        }}
-      />
-      {Platform.OS === 'ios' && (
-        <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Button
-            icon="photo.on.rectangle.angled"
-            onPress={handlePick}
-          />
-          <Stack.Toolbar.Button
-            icon="square.and.arrow.down"
-            disabled={saving}
-            onPress={handleSave}
-          />
-        </Stack.Toolbar>
-      )}
-      <View style={styles.root}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={[styles.root, { paddingTop: insets.top }]}>
         <View
           ref={stageRef}
           collapsable={false}
@@ -187,9 +159,19 @@ export default function Demo() {
             colorBack={colorBack}
             colorFront={colorFront}
           />
+          <View style={styles.floatingActions}>
+            <FloatingButton
+              icon="photo.on.rectangle.angled"
+              onPress={handlePick}
+            />
+            <FloatingButton
+              icon="square.and.arrow.down"
+              onPress={handleSave}
+              disabled={saving}
+            />
+          </View>
         </View>
         <View style={styles.panel}>
-          <View style={styles.dragHandle} />
           {Platform.OS === 'ios' ? (
             <NativeControls
               size={size}
@@ -235,36 +217,30 @@ export default function Demo() {
   );
 }
 
-function HeaderButton({
-  label,
+function FloatingButton({
+  icon,
   onPress,
-  emphasized,
   disabled,
 }: {
-  label: string;
+  icon: string;
   onPress: () => void;
-  emphasized?: boolean;
   disabled?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      hitSlop={8}
       style={({ pressed }) => [
-        styles.headerButton,
-        emphasized && styles.headerButtonEmphasized,
+        styles.floatingButton,
         (pressed || disabled) && { opacity: 0.5 },
       ]}
-      hitSlop={8}
     >
-      <Text
-        style={[
-          styles.headerButtonText,
-          emphasized && styles.headerButtonTextEmphasized,
-        ]}
-      >
-        {label}
-      </Text>
+      <Image
+        source={`sf:${icon}`}
+        tintColor="#fff"
+        style={styles.floatingButtonIcon}
+      />
     </Pressable>
   );
 }
@@ -303,8 +279,13 @@ function NativeControls({
   ];
   return (
     <Host style={styles.formHost} colorScheme="dark">
-      <Form>
-        <Section>
+      <Form
+        modifiers={[
+          listStyle('plain'),
+          scrollContentBackground('hidden'),
+        ]}
+      >
+        <Section modifiers={[listRowBackground('clear')]}>
           <ExpoPicker
             label="Matrix"
             selection={typeIndex < 0 ? 0 : typeIndex}
@@ -526,15 +507,23 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     overflow: 'hidden',
   },
-  dragHandle: {
-    alignSelf: 'center',
-    marginTop: 8,
-    marginBottom: 4,
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+  floatingActions: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    gap: 8,
   },
+  floatingButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingButtonIcon: { width: 18, height: 18 },
   formHost: { flex: 1 },
   androidScroll: { flex: 1 },
   androidScrollContent: { paddingHorizontal: 16, paddingTop: 12, gap: 24 },
@@ -580,14 +569,4 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.2)',
   },
   swatchLabel: { color: '#fafafa', fontSize: 13, marginLeft: 2 },
-  headerActions: { flexDirection: 'row', gap: 8, paddingRight: 4 },
-  headerButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  headerButtonEmphasized: { backgroundColor: '#fafafa' },
-  headerButtonText: { color: '#fafafa', fontSize: 15, fontWeight: '500' },
-  headerButtonTextEmphasized: { color: '#0b0b0b', fontWeight: '600' },
 });
