@@ -42,6 +42,17 @@ export type DitherShaderProps = ShaderViewProps & {
   colorBack?: string;
   /** CSS colour string for the "1" / ink cells. Default `#fff`. */
   colorFront?: string;
+  /**
+   * Image zoom factor inside the canvas. `1` = no zoom (default). Values
+   * greater than 1 zoom in; values less than 1 zoom out (edge texels stretch
+   * via clamp-to-edge sampling). The dither cell grid stays canvas-aligned.
+   */
+  scale?: number;
+  /**
+   * Rotation of the image content, in degrees. Default `0`. Rotates around
+   * the image center; the dither grid stays axis-aligned to the canvas.
+   */
+  rotation?: number;
 };
 
 type LoadedTexture = {
@@ -85,6 +96,8 @@ export const DitherShader = memo(function DitherShader({
   type = '8x8',
   colorBack = '#000',
   colorFront = '#fff',
+  scale = 1,
+  rotation = 0,
   pixelRatio,
   ...rest
 }: DitherShaderProps) {
@@ -146,8 +159,10 @@ export const DitherShader = memo(function DitherShader({
       ditherType: DITHER_TYPE_MAP[type] ?? DITHER_TYPE_8X8,
       colorBack: d.vec4f(br, bg, bb, ba),
       colorFront: d.vec4f(fr, fg, fb, fa),
+      scale,
+      rotation: (rotation * Math.PI) / 180,
     };
-  }, [size, type, colorBack, colorFront, loaded]);
+  }, [size, type, colorBack, colorFront, scale, rotation, loaded]);
 
   return (
     <ShaderMount

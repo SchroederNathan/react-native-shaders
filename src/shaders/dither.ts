@@ -22,6 +22,8 @@ export const DitherUniforms = d.struct({
   ditherType: d.u32,
   colorBack: d.vec4f,
   colorFront: d.vec4f,
+  scale: d.f32,
+  rotation: d.f32,
 });
 
 // Bayer threshold matrices, scaled to 0..1. Layout matches paper-design's
@@ -103,10 +105,25 @@ export const ditherShader: ShaderModule<typeof DitherUniforms> = {
       const blockCenter = blockCoord.add(d.vec2f(0.5)).mul(pxSize);
       const normalizedUv = blockCenter.div(u.resolution);
 
+      // Apply scale + rotation around the image center, AFTER coverUv. The
+      // dither cell grid (blockCoord) is computed from fragCoord above and
+      // stays anchored to the canvas — only the sampling UV moves. This is
+      // what gives stable, non-juddery cells when the image is animated.
+      const covered = coverUv(normalizedUv, u.resolution, u.imageSize);
+      const centered = covered.sub(d.vec2f(0.5));
+      const c = std.cos(u.rotation);
+      const s = std.sin(u.rotation);
+      const rotated = d.vec2f(
+        centered.x * c - centered.y * s,
+        centered.x * s + centered.y * c,
+      );
+      const scaledSafe = std.max(u.scale, d.f32(0.0001));
+      const sampleUv = rotated.div(scaledSafe).add(d.vec2f(0.5));
+
       const src = std.textureSample(
         layout.$.sourceTex,
         layout.$.sourceSampler,
-        coverUv(normalizedUv, u.resolution, u.imageSize),
+        sampleUv,
       );
 
       // Perceptual luminance (Rec. 601). Drives the dither: brighter pixels
